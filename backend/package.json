@@ -1,0 +1,28 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon server.js",
+    "db:migrate": "node db/migrate.js",
+    "auth:create-user": "node db/create-role-user.js",
+    "auth:set-role": "node db/set-user-role.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.8",
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
