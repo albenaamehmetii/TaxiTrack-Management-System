@@ -22,4 +22,73 @@ router.get('/users', requireAuth, requireRole('admin'), async (_req, res) => {
   }
 });
 
+router.get('/rides', requireAuth, requireRole('admin'), async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT r.id, r.client_id, r.driver_id, c.full_name AS client_name,
+        d.full_name AS driver_name, r.pickup_latitude, r.pickup_longitude,
+        r.destination_latitude, r.destination_longitude, r.status,
+        r.requested_at, r.updated_at
+       FROM rides r
+       JOIN users c ON c.id = r.client_id
+       LEFT JOIN users d ON d.id = r.driver_id
+       ORDER BY r.requested_at DESC`,
+    );
+    return res.json({ rides: result.rows.map((row) => ({
+      id: String(row.id),
+      clientId: String(row.client_id),
+      driverId: row.driver_id == null ? null : String(row.driver_id),
+      clientName: row.client_name,
+      driverName: row.driver_name,
+      pickup: { latitude: row.pickup_latitude, longitude: row.pickup_longitude },
+      destination: { latitude: row.destination_latitude, longitude: row.destination_longitude },
+      status: row.status,
+      requestedAt: row.requested_at,
+      updatedAt: row.updated_at,
+    })) });
+  } catch (error) {
+    console.error('Admin ride list failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to load ride requests.' });
+  }
+});
+
+router.patch('/rides/:id/assign-driver', requireAuth, requireRole('admin'), async (req, res) => {
+  const rideId = req.params.id;
+  const driverId = req.body?.driverId;
+  if (!/^[0-9]+$/.test(rideId) || BigInt(rideId) < 1n) {
+    return res.status(400).json({ message: 'Ride ID is invalid.' });
+  }
+  if (!(typeof driverId === 'string' || typeof driverId === 'number') || !/^[0-9]+$/.test(String(driverId)) || BigInt(driverId) < 1n) {
+    return res.status(400).json({ message: 'Choose a valid driver.' });
+  }
+
+  try {
+    const driver = await pool.query('SELECT id FROM users WHERE id = $1 AND role = \'driver\' LIMIT 1', [String(driverId)]);
+    if (!driver.rows[0]) return res.status(404).json({ message: 'Driver not found.' });
+
+    const result = await pool.query(
+      `UPDATE rides SET driver_id = $1, updated_at = NOW()
+       WHERE id = $2 AND status = 'pending' AND driver_id IS NULL
+       RETURNING id, client_id, driver_id, pickup_latitude, pickup_longitude,
+         destination_latitude, destination_longitude, status, requested_at, updated_at`,
+      [String(driverId), rideId],
+    );
+    if (!result.rows[0]) {
+      return res.status(409).json({ message: 'This request has already been assigned or is no longer pending.' });
+    }
+    return res.json({ ride: {
+      id: String(result.rows[0].id),
+      clientId: String(result.rows[0].client_id),
+      driverId: String(result.rows[0].driver_id),
+      pickup: { latitude: result.rows[0].pickup_latitude, longitude: result.rows[0].pickup_longitude },
+      destination: { latitude: result.rows[0].destination_latitude, longitude: result.rows[0].destination_longitude },
+      status: result.rows[0].status,
+      requestedAt: result.rows[0].requested_at,
+      updatedAt: result.rows[0].updated_at,
+    } });
+  } catch (error) {
+    console.error('Ride assignment failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to assign this request right now.' });
+  }
+});
 module.exports = router;

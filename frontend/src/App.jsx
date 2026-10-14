@@ -77,6 +77,195 @@ function formatCoordinates(location) {
   return `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`
 }
 
+
+function formatRideTime(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Time unavailable'
+
+  return new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Europe/Belgrade',
+  }).format(date)
+}
+
+function AdminDashboard({ user, onLogout }) {
+  const [rides, setRides] = useState([])
+  const [drivers, setDrivers] = useState([])
+  const [selectedDrivers, setSelectedDrivers] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [assigningRide, setAssigningRide] = useState(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    async function loadData() {
+      setLoading(true)
+      setError('')
+      try {
+        const [ridesResponse, usersResponse] = await Promise.all([
+          fetch(`${API_URL}/api/admin/rides`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/admin/users`, { credentials: 'include' }),
+        ])
+        const [ridesData, usersData] = await Promise.all([ridesResponse.json(), usersResponse.json()])
+        if (!ridesResponse.ok) throw new Error(ridesData.message || 'Unable to load ride requests.')
+        if (!usersResponse.ok) throw new Error(usersData.message || 'Unable to load drivers.')
+        if (active) {
+          setRides(ridesData.rides || [])
+          setDrivers((usersData.users || []).filter((item) => item.role === 'driver'))
+        }
+      } catch (loadError) {
+        if (active) setError(loadError.message || 'Unable to load the admin dashboard.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    loadData()
+    return () => { active = false }
+  }, [reloadKey])
+
+  async function assignDriver(rideId) {
+    const driverId = selectedDrivers[rideId]
+    if (!driverId) {
+      setError('Choose a driver first.')
+      return
+    }
+    setAssigningRide(rideId)
+    setError('')
+    setNotice('')
+    try {
+      const response = await fetch(`${API_URL}/api/admin/rides/${rideId}/assign-driver`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ driverId }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message || 'Unable to assign this request.')
+      setNotice(`Ride request #${rideId} assigned to a driver.`)
+      setReloadKey((value) => value + 1)
+    } catch (assignError) {
+      setError(assignError.message || 'Unable to assign this request.')
+    } finally {
+      setAssigningRide(null)
+    }
+  }
+
+  return (
+    <section className="role-dashboard">
+      <div className="role-dashboard-heading">
+        <div className="welcome-copy">
+          <p className="eyebrow">ADMIN DASHBOARD</p>
+          <h1>Ride requests.</h1>
+          <p className="intro">Review new requests and assign each one to a driver.</p>
+        </div>
+        <div className="client-account">
+          <span className="avatar" aria-hidden="true">{user.fullName.charAt(0).toUpperCase()}</span>
+          <span className="client-account-info"><strong>{user.fullName}</strong><span>Administrator</span></span>
+          <button className="secondary-button" type="button" onClick={onLogout}>Sign out</button>
+        </div>
+      </div>
+      {error && <div className="notice error" role="alert">{error}</div>}
+      {notice && <div className="notice success" role="status">{notice}</div>}
+      <div className="request-section">
+        <div className="request-section-heading">
+          <div><h2>All requests</h2><p>New requests are listed first.</p></div>
+          <button className="secondary-button refresh-button" type="button" onClick={() => setReloadKey((value) => value + 1)} disabled={loading}>Refresh</button>
+        </div>
+        {loading ? <p className="empty-state">Loading requests…</p> : rides.length === 0 ? <p className="empty-state">There are no ride requests yet.</p> : (
+          <div className="request-list">
+            {rides.map((ride) => (
+              <article className="request-card" key={ride.id}>
+                <div className="request-card-top">
+                  <div><p className="card-eyebrow">REQUEST #{ride.id}</p><h3>{ride.clientName}</h3><p className="request-time">{formatRideTime(ride.requestedAt)}</p></div>
+                  <span className={`status-badge status-${ride.status}`}>{ride.status.replace('_', ' ')}</span>
+                </div>
+                <div className="request-coordinates">
+                  <p><strong>Pickup</strong><span>{ride.pickup.latitude.toFixed(5)}, {ride.pickup.longitude.toFixed(5)}</span></p>
+                  <p><strong>Destination</strong><span>{ride.destination.latitude.toFixed(5)}, {ride.destination.longitude.toFixed(5)}</span></p>
+                </div>
+                {ride.driverId ? <p className="assigned-driver">Assigned to {ride.driverName || 'a driver'}</p> : ride.status === 'pending' ? (
+                  <div className="assignment-controls">
+                    <select aria-label={`Choose a driver for request ${ride.id}`} value={selectedDrivers[ride.id] || ''} onChange={(event) => setSelectedDrivers((current) => ({ ...current, [ride.id]: event.target.value }))}>
+                      <option value="">Choose a driver</option>
+                      {drivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.fullName}</option>)}
+                    </select>
+                    <button className="primary-button" type="button" onClick={() => assignDriver(ride.id)} disabled={assigningRide === ride.id || drivers.length === 0}>
+                      {assigningRide === ride.id ? 'Assigning…' : 'Assign driver'}
+                    </button>
+                    {drivers.length === 0 && <small>Create a driver account before assigning a request.</small>}
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function DriverDashboard({ user, onLogout }) {
+  const [rides, setRides] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    fetch(`${API_URL}/api/rides/assigned`, { credentials: 'include' })
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.message || 'Unable to load assigned requests.')
+        if (active) setRides(data.rides || [])
+      })
+      .catch((loadError) => { if (active) setError(loadError.message || 'Unable to load assigned requests.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [reloadKey])
+
+  return (
+    <section className="role-dashboard">
+      <div className="role-dashboard-heading">
+        <div className="welcome-copy">
+          <p className="eyebrow">DRIVER DASHBOARD</p>
+          <h1>Your assigned requests.</h1>
+          <p className="intro">Requests assigned to you by an administrator appear here.</p>
+        </div>
+        <div className="client-account">
+          <span className="avatar" aria-hidden="true">{user.fullName.charAt(0).toUpperCase()}</span>
+          <span className="client-account-info"><strong>{user.fullName}</strong><span>Driver</span></span>
+          <button className="secondary-button" type="button" onClick={onLogout}>Sign out</button>
+        </div>
+      </div>
+      {error && <div className="notice error" role="alert">{error}</div>}
+      <div className="request-section">
+        <div className="request-section-heading">
+          <div><h2>Assigned requests</h2><p>Only requests assigned to your account are shown.</p></div>
+          <button className="secondary-button refresh-button" type="button" onClick={() => { setLoading(true); setReloadKey((value) => value + 1) }} disabled={loading}>Refresh</button>
+        </div>
+        {loading ? <p className="empty-state">Loading requests…</p> : rides.length === 0 ? <p className="empty-state">You have no assigned requests.</p> : (
+          <div className="request-list">
+            {rides.map((ride) => (
+              <article className="request-card" key={ride.id}>
+                <div className="request-card-top">
+                  <div><p className="card-eyebrow">REQUEST #{ride.id}</p><h3>{ride.clientName}</h3><p className="request-time">{formatRideTime(ride.requestedAt)}</p></div>
+                  <span className={`status-badge status-${ride.status}`}>{ride.status.replace('_', ' ')}</span>
+                </div>
+                <div className="request-coordinates">
+                  <p><strong>Pickup</strong><span>{ride.pickup.latitude.toFixed(5)}, {ride.pickup.longitude.toFixed(5)}</span></p>
+                  <p><strong>Destination</strong><span>{ride.destination.latitude.toFixed(5)}, {ride.destination.longitude.toFixed(5)}</span></p>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
 function App() {
   const [user, setUser] = useState(null)
   const [mode, setMode] = useState('login')
@@ -92,6 +281,9 @@ function App() {
   const [activeLocation, setActiveLocation] = useState('pickup')
   const [locationError, setLocationError] = useState('')
   const [locating, setLocating] = useState(false)
+  const [rideBusy, setRideBusy] = useState(false)
+  const [rideFeedback, setRideFeedback] = useState('')
+  const [rideFeedbackType, setRideFeedbackType] = useState('success')
 
   useEffect(() => {
     let active = true
@@ -157,6 +349,35 @@ function App() {
     if (kind === 'pickup') setPickup(location)
     else setDestination(location)
     setLocationError('')
+    setRideFeedback('')
+  }
+
+  async function submitRideRequest() {
+    if (!pickup || !destination) return
+    setRideBusy(true)
+    setRideFeedback('')
+    try {
+      const response = await fetch(`${API_URL}/api/rides`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          pickupLatitude: pickup.latitude,
+          pickupLongitude: pickup.longitude,
+          destinationLatitude: destination.latitude,
+          destinationLongitude: destination.longitude,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message || 'Unable to create your ride request.')
+      setRideFeedback(`Request #${data.ride.id} sent. It is waiting for a driver.`)
+      setRideFeedbackType('success')
+    } catch (requestError) {
+      setRideFeedback(requestError.message || 'Unable to connect to the server.')
+      setRideFeedbackType('error')
+    } finally {
+      setRideBusy(false)
+    }
   }
 
   function useMyLocation() {
@@ -237,6 +458,10 @@ function App() {
                     <span><strong>Destination</strong><small>{formatCoordinates(destination)}</small></span>
                   </div>
                 </div>
+                {rideFeedback && <div className={`notice ${rideFeedbackType}`} role={rideFeedbackType === 'error' ? 'alert' : 'status'}>{rideFeedback}</div>}
+                <button className="primary-button create-ride-button" type="button" onClick={submitRideRequest} disabled={!pickup || !destination || rideBusy}>
+                  {rideBusy ? 'Sending request…' : 'Request a taxi'}
+                </button>
               </aside>
               <div className="map-card">
                 <LocationMap activeLocation={activeLocation} pickup={pickup} destination={destination} onSelect={selectLocation} />
@@ -245,24 +470,10 @@ function App() {
             </div>
             <p className="map-note">The map shows selected coordinates. Your browser will ask before sharing your current location.</p>
           </section>
+        ) : user.role === 'admin' ? (
+          <AdminDashboard user={user} onLogout={handleLogout} />
         ) : (
-          <section className="welcome-layout">
-            <div className="welcome-copy">
-              <p className="eyebrow">YOUR DASHBOARD</p>
-              <h1>Welcome back, {user.fullName.split(' ')[0]}.</h1>
-              <p className="intro">You're signed in to TaxiTrack.</p>
-            </div>
-            <div className="account-card">
-              <div className="avatar" aria-hidden="true">{user.fullName.charAt(0).toUpperCase()}</div>
-              <p className="card-eyebrow">YOUR ACCOUNT</p>
-              <h2>{user.fullName}</h2>
-              <p className="account-email">{user.email}</p>
-              <div className="role-badge"><span /> {ROLE_LABELS[user.role] || user.role}</div>
-              <button className="secondary-button" type="button" onClick={handleLogout}>Sign out</button>
-              {user.role === 'admin' && <p className="role-note">Admin account</p>}
-              {user.role === 'driver' && <p className="role-note">Driver account</p>}
-            </div>
-          </section>
+          <DriverDashboard user={user} onLogout={handleLogout} />
         )
       ) : (
         <section className="auth-layout">

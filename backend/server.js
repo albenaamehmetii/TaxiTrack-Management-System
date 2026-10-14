@@ -4,6 +4,7 @@ require('dotenv').config();
 const { pool } = require('./db/pool');
 const authRoutes = require('./auth/routes');
 const adminRoutes = require('./auth/adminRoutes');
+const ridesRoutes = require('./rides/routes');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -42,6 +43,7 @@ app.get('/api/health', async (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/rides', ridesRoutes);
 app.use('/api/admin', adminRoutes);
 
 app.use((error, _req, res, _next) => {
