@@ -207,24 +207,82 @@ function AdminDashboard({ user, onLogout }) {
   )
 }
 
+function getCurrentCoordinates() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Location is not available in this browser.'))
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => resolve({ latitude: coords.latitude, longitude: coords.longitude }),
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          reject(new Error('Allow location access in your browser to start or end a trip.'))
+        } else {
+          reject(new Error('Could not get your location. Check your connection and try again.'))
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+    )
+  })
+}
+
 function DriverDashboard({ user, onLogout }) {
   const [rides, setRides] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [workingRide, setWorkingRide] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let active = true
-    fetch(`${API_URL}/api/rides/assigned`, { credentials: 'include' })
-      .then(async (response) => {
+    async function loadRides() {
+      setLoading(true)
+      setError('')
+      try {
+        const response = await fetch(`${API_URL}/api/rides/assigned`, { credentials: 'include' })
         const data = await response.json()
         if (!response.ok) throw new Error(data.message || 'Unable to load assigned requests.')
         if (active) setRides(data.rides || [])
-      })
-      .catch((loadError) => { if (active) setError(loadError.message || 'Unable to load assigned requests.') })
-      .finally(() => { if (active) setLoading(false) })
+      } catch (loadError) {
+        if (active) setError(loadError.message || 'Unable to load assigned requests.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    loadRides()
     return () => { active = false }
   }, [reloadKey])
+
+  async function updateRide(ride, action) {
+    setWorkingRide(`${ride.id}:${action}`)
+    setError('')
+    setNotice('')
+    try {
+      const options = { method: 'PATCH', credentials: 'include' }
+      if (action === 'start' || action === 'end') {
+        options.headers = { 'Content-Type': 'application/json' }
+        options.body = JSON.stringify(await getCurrentCoordinates())
+      }
+      const response = await fetch(`${API_URL}/api/rides/${ride.id}/${action}`, options)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message || 'Unable to update this request.')
+
+      const messages = {
+        accept: 'Request accepted.',
+        start: 'Trip started. The time and location were saved.',
+        end: 'Trip completed. The time and location were saved.',
+      }
+      setNotice(messages[action])
+      setReloadKey((value) => value + 1)
+    } catch (actionError) {
+      setError(actionError.message || 'Unable to complete this action.')
+    } finally {
+      setWorkingRide(null)
+    }
+  }
 
   return (
     <section className="role-dashboard">
@@ -241,10 +299,11 @@ function DriverDashboard({ user, onLogout }) {
         </div>
       </div>
       {error && <div className="notice error" role="alert">{error}</div>}
+      {notice && <div className="notice success" role="status">{notice}</div>}
       <div className="request-section">
         <div className="request-section-heading">
           <div><h2>Assigned requests</h2><p>Only requests assigned to your account are shown.</p></div>
-          <button className="secondary-button refresh-button" type="button" onClick={() => { setLoading(true); setReloadKey((value) => value + 1) }} disabled={loading}>Refresh</button>
+          <button className="secondary-button refresh-button" type="button" onClick={() => setReloadKey((value) => value + 1)} disabled={loading}>Refresh</button>
         </div>
         {loading ? <p className="empty-state">Loading requests…</p> : rides.length === 0 ? <p className="empty-state">You have no assigned requests.</p> : (
           <div className="request-list">
@@ -257,6 +316,15 @@ function DriverDashboard({ user, onLogout }) {
                 <div className="request-coordinates">
                   <p><strong>Pickup</strong><span>{ride.pickup.latitude.toFixed(5)}, {ride.pickup.longitude.toFixed(5)}</span></p>
                   <p><strong>Destination</strong><span>{ride.destination.latitude.toFixed(5)}, {ride.destination.longitude.toFixed(5)}</span></p>
+                </div>
+                {(ride.start || ride.end) && <div className="trip-saved-details">
+                  {ride.start && <p><strong>Started:</strong> {formatRideTime(ride.startedAt)} · {ride.start.latitude.toFixed(5)}, {ride.start.longitude.toFixed(5)}</p>}
+                  {ride.end && <p><strong>Ended:</strong> {formatRideTime(ride.endedAt)} · {ride.end.latitude.toFixed(5)}, {ride.end.longitude.toFixed(5)}</p>}
+                </div>}
+                <div className="trip-actions">
+                  {ride.status === 'pending' && <button className="primary-button" type="button" onClick={() => updateRide(ride, 'accept')} disabled={workingRide !== null}>{workingRide === `${ride.id}:accept` ? 'Accepting…' : 'Accept request'}</button>}
+                  {ride.status === 'accepted' && <button className="primary-button" type="button" onClick={() => updateRide(ride, 'start')} disabled={workingRide !== null}>{workingRide === `${ride.id}:start` ? 'Starting trip…' : 'Start trip'}</button>}
+                  {ride.status === 'in_progress' && <button className="primary-button" type="button" onClick={() => updateRide(ride, 'end')} disabled={workingRide !== null}>{workingRide === `${ride.id}:end` ? 'Ending trip…' : 'End trip'}</button>}
                 </div>
               </article>
             ))}

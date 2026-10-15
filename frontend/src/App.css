@@ -150,3 +150,9 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
   .assignment-controls { grid-template-columns: 1fr; }
   .assignment-controls .primary-button { width: 100%; }
 }
+.trip-actions { display: flex; justify-content: flex-end; margin-top: 17px; }
+.trip-actions .primary-button { width: auto; min-height: 42px; margin: 0; padding: 0 18px; font-size: 12px; }
+.trip-saved-details { display: grid; gap: 6px; margin-top: 15px; padding: 12px; border-radius: 8px; background: #f6f8f5; }
+.trip-saved-details p { margin: 0; color: #657169; font-size: 11px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.trip-saved-details strong { color: #414e46; }
+@media (max-width: 520px) { .trip-actions .primary-button { width: 100%; } }
