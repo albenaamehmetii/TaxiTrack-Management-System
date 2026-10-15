@@ -199,6 +199,10 @@ function AdminDashboard({ user, onLogout }) {
   const [dateTo, setDateTo] = useState('')
   const [clientFilter, setClientFilter] = useState('')
   const [driverFilter, setDriverFilter] = useState('')
+  const busyDriverIds = new Set(rides
+    .filter((ride) => ['accepted', 'in_progress'].includes(ride.status) && ride.driverId)
+    .map((ride) => ride.driverId))
+  const availableDrivers = drivers.filter((driver) => !busyDriverIds.has(driver.id))
   const clients = [...new Map(rides.map((ride) => [ride.clientId, ride.clientName])).entries()]
   const currentRides = rides.filter((ride) => !['completed', 'cancelled'].includes(ride.status))
   const pastRides = rides.filter((ride) => ['completed', 'cancelled'].includes(ride.status))
@@ -241,8 +245,8 @@ function AdminDashboard({ user, onLogout }) {
 
   async function assignDriver(rideId) {
     const driverId = selectedDrivers[rideId]
-    if (!driverId) {
-      setError('Choose a driver first.')
+    if (!driverId || !availableDrivers.some((driver) => driver.id === driverId)) {
+      setError(driverId ? 'This driver is no longer available. Choose another driver.' : 'Choose a driver first.')
       return
     }
     setAssigningRide(rideId)
@@ -296,14 +300,14 @@ function AdminDashboard({ user, onLogout }) {
         </div>
         {ride.driverId ? <p className="assigned-driver">Assigned to {ride.driverName || 'a driver'}</p> : ride.status === 'pending' ? (
           <div className="assignment-controls">
-            <select aria-label={`Choose a driver for request ${ride.id}`} value={selectedDrivers[ride.id] || ''} onChange={(event) => setSelectedDrivers((current) => ({ ...current, [ride.id]: event.target.value }))}>
+            <select aria-label={`Choose a driver for request ${ride.id}`} value={availableDrivers.some((driver) => driver.id === selectedDrivers[ride.id]) ? selectedDrivers[ride.id] : ''} onChange={(event) => setSelectedDrivers((current) => ({ ...current, [ride.id]: event.target.value }))}>
               <option value="">Choose a driver</option>
-              {drivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.fullName}</option>)}
+              {availableDrivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.fullName}</option>)}
             </select>
-            <button className="primary-button" type="button" onClick={() => assignDriver(ride.id)} disabled={assigningRide === ride.id || drivers.length === 0}>
+            <button className="primary-button" type="button" onClick={() => assignDriver(ride.id)} disabled={assigningRide === ride.id || availableDrivers.length === 0}>
               {assigningRide === ride.id ? 'Assigning…' : 'Assign driver'}
             </button>
-            {drivers.length === 0 && <small>Create a driver account before assigning a request.</small>}
+            {availableDrivers.length === 0 && <small>Nuk ka taksist të lirë për momentin.</small>}
           </div>
         ) : null}
         {ride.status === 'completed' && <TripSummary ride={ride} />}
@@ -334,6 +338,11 @@ function AdminDashboard({ user, onLogout }) {
         </div>
         {loading ? <p className="empty-state">Loading requests…</p> : rides.length === 0 ? <p className="empty-state">There are no ride requests yet.</p> : (
           <div className="admin-request-groups">
+            {availableDrivers.length === 0 && currentRides.some((ride) => ride.status === 'pending') && (
+              <div className="availability-notice" role="status">
+                Nuk ka taksist të lirë për momentin. Mund të prisni derisa të lirohet një taksist ose ta anuloni kërkesën.
+              </div>
+            )}
             {currentRides.length > 0 && <section className="admin-request-group">
               <div className="admin-group-heading"><h3>Current requests</h3><span>{currentRides.length}</span></div>
               <div className="request-list">{currentRides.map(renderRideRequest)}</div>
@@ -588,7 +597,7 @@ function ClientRideStateScreen({ ride, state, onReturn }) {
   )
 }
 
-function ClientRideProgress({ ride, cancelling, cancelError, onCancel, onReturn }) {
+function ClientRideProgress({ ride, cancelling, cancelError, freeDriverCount, onCancel, onReturn }) {
   const [confirmingCancel, setConfirmingCancel] = useState(false)
   const isCancelled = ride.status === 'cancelled'
   const isCompleted = ride.status === 'completed'
@@ -617,6 +626,9 @@ function ClientRideProgress({ ride, cancelling, cancelError, onCancel, onReturn 
         <p><span>Pickup</span><strong>{ride.pickup.address || `Map point (${formatCoordinates(ride.pickup)})`}</strong></p>
         <p><span>Destination</span><strong>{ride.destination.address || `Map point (${formatCoordinates(ride.destination)})`}</strong></p>
       </div>
+      {ride.status === 'pending' && freeDriverCount === 0 && <div className="availability-notice" role="status">
+        Nuk ka taksist të lirë për momentin. Mund të prisni derisa të lirohet një taksist ose ta anuloni kërkesën.
+      </div>}
       {cancelError && <div className="notice error" role="alert">{cancelError}</div>}
       <div className="client-ride-actions">
         {canCancel && !confirmingCancel && <button className="cancel-ride-button" type="button" onClick={() => setConfirmingCancel(true)} disabled={cancelling}>Cancel request</button>}
@@ -659,6 +671,7 @@ function App() {
   const [clientRidesLoading, setClientRidesLoading] = useState(true)
   const [clientRidesError, setClientRidesError] = useState('')
   const [clientRidesReloadKey, setClientRidesReloadKey] = useState(0)
+  const [freeDriverCount, setFreeDriverCount] = useState(null)
   const [focusedClientRideId, setFocusedClientRideId] = useState(null)
   const [hideClientRideProgress, setHideClientRideProgress] = useState(false)
   const [cancellingClientRideId, setCancellingClientRideId] = useState(null)
@@ -710,6 +723,7 @@ function App() {
         if (!response.ok) throw new Error(data.message || 'Unable to load your ride history.')
         if (active) {
           setClientRides(data.rides || [])
+          setFreeDriverCount(Number.isInteger(data.freeDriverCount) ? data.freeDriverCount : null)
         }
       } catch (error) {
         if (active) setClientRidesError(error.message || 'Unable to load your ride history.')
@@ -841,6 +855,7 @@ function App() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Unable to create your ride request.')
+      setFreeDriverCount(Number.isInteger(data.freeDriverCount) ? data.freeDriverCount : null)
       setClientRides((current) => [data.ride, ...current.filter((ride) => ride.id !== data.ride.id)])
       setFocusedClientRideId(data.ride.id)
       setHideClientRideProgress(false)
@@ -912,6 +927,7 @@ function App() {
                 ride={activeClientRide}
                 cancelling={cancellingClientRideId === activeClientRide.id}
                 cancelError={clientCancelError}
+                freeDriverCount={freeDriverCount}
                 onCancel={cancelClientRide}
                 onReturn={() => {
                   setFocusedClientRideId(null)

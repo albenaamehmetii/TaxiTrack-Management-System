@@ -96,6 +96,23 @@ function publicRide(row) {
   };
 }
 
+async function getFreeDriverCount() {
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM users u
+       WHERE u.role = 'driver'
+         AND NOT EXISTS (
+           SELECT 1 FROM rides r
+           WHERE r.driver_id = u.id AND r.status IN ('accepted', 'in_progress')
+         )`,
+    );
+    return Number(result.rows[0]?.count || 0);
+  } catch {
+    return null;
+  }
+}
+
 router.get('/', requireAuth, requireRole('client'), async (req, res) => {
   try {
     const result = await pool.query(
@@ -114,7 +131,8 @@ router.get('/', requireAuth, requireRole('client'), async (req, res) => {
        ORDER BY r.created_at DESC`,
       [req.user.id],
     );
-    return res.json({ rides: result.rows.map(publicRide) });
+    const freeDriverCount = await getFreeDriverCount();
+    return res.json({ rides: result.rows.map(publicRide), freeDriverCount });
   } catch (error) {
     console.error('Client ride history load failed:', error.code || error.name);
     return res.status(500).json({ message: 'Unable to load your ride history.' });
@@ -179,9 +197,11 @@ router.post('/', requireAuth, requireRole('client'), async (req, res) => {
         roundedBasePrice, roundedPricePerKm, estimatedFare,
       ],
     );
+    const freeDriverCount = await getFreeDriverCount();
     return res.status(201).json({
       ride: publicRide(result.rows[0]),
       estimateMessage,
+      freeDriverCount,
     });
   } catch (error) {
     console.error('Ride request creation failed:', error.code || error.name);
@@ -323,20 +343,43 @@ router.patch('/:id/accept', requireAuth, requireRole('driver'), async (req, res)
   const rideId = req.params.id;
   if (!validRideId(rideId)) return res.status(400).json({ message: 'Ride ID is invalid.' });
 
+  let client;
   try {
-    const result = await pool.query(
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const driver = await client.query(
+      'SELECT id FROM users WHERE id = $1 AND role = \'driver\' FOR UPDATE', [req.user.id],
+    );
+    if (!driver.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'Your driver account is unavailable.' });
+    }
+    const activeRide = await client.query(
+      `SELECT id FROM rides WHERE driver_id = $1 AND status IN ('accepted', 'in_progress') LIMIT 1`,
+      [req.user.id],
+    );
+    if (activeRide.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'You already have an active trip. Finish it before accepting another request.' });
+    }
+    const result = await client.query(
       `UPDATE rides SET status = 'accepted', updated_at = NOW()
        WHERE id = $1 AND driver_id = $2 AND status = 'pending'
        RETURNING id, status, updated_at`,
       [rideId, req.user.id],
     );
     if (!result.rows[0]) {
-      return res.status(409).json({ message: 'This request is not assigned to you or is no longer pending.' });
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'This request is not assigned to you, is no longer pending, or you already have an active trip.' });
     }
+    await client.query('COMMIT');
     return res.json({ ride: { id: String(result.rows[0].id), status: result.rows[0].status, updatedAt: result.rows[0].updated_at } });
   } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
     console.error('Ride acceptance failed:', error.code || error.name);
     return res.status(500).json({ message: 'Unable to accept this request right now.' });
+  } finally {
+    client?.release();
   }
 });
 

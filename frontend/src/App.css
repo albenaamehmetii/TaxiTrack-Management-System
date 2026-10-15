@@ -201,6 +201,10 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .rider-history-panel .empty-state { margin: 15px 0; font-size: 11px; }
 .rider-page .location-error { color: #ffaaa0; }
 .rider-page .notice { margin: 10px 0 0; }
+.availability-notice { display: grid; gap: 5px; padding: 12px 14px; border: 1px solid rgb(246 179 65 / 28%); border-radius: 10px; background: rgb(246 179 65 / 9%); color: #ffe0a2; font-size: 11px; line-height: 1.5; }
+.admin-request-groups > .availability-notice { margin-bottom: 14px; }
+.assignment-controls > small { display: block; margin-top: 7px; color: #ffd17a; font-size: 10px; }
+.client-ride-progress .availability-notice { margin-top: 15px; }
 .rider-state-screen { width: min(520px, 100%); margin: clamp(35px, 9vh, 90px) auto; padding: clamp(28px, 6vw, 48px); border: 1px solid rgb(255 255 255 / 15%); border-radius: 20px; background: rgb(10 16 25 / 78%); box-shadow: 0 28px 80px rgb(0 0 0 / 38%); color: #fff; text-align: center; backdrop-filter: blur(12px); }
 .rider-state-icon { display: grid; width: 58px; height: 58px; margin: 0 auto 18px; place-items: center; border: 1px solid rgb(255 255 255 / 17%); border-radius: 50%; background: rgb(255 255 255 / 8%); color: #f2a31d; font-size: 34px; line-height: 1; }
 .is-cancelled .rider-state-icon { border-color: rgb(248 104 104 / 28%); background: rgb(248 104 104 / 12%); color: #ff8888; }

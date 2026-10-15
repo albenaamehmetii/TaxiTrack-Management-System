@@ -415,3 +415,149 @@ test('a GPS save failure returns a controlled error and keeps earlier points', a
   assert.match(body.message, /Unable to save this GPS position/i);
   assert.equal(api.locationCount, 2);
 });
+
+test('available drivers exclude accepted or in-progress rides and become assignable again after completion', async () => {
+  const users = new Map([
+    ['100', { id: '100', full_name: 'Admin', email: 'admin@example.invalid', role: 'admin', created_at: new Date() }],
+    ['200', { id: '200', full_name: 'Rider', email: 'rider@example.invalid', role: 'client', created_at: new Date() }],
+    ['300', { id: '300', full_name: 'Driver', email: 'driver@example.invalid', role: 'driver', created_at: new Date() }],
+  ]);
+  const makeRide = (id, status, driverId = null) => ({
+    id: String(id), client_id: '200', driver_id: driverId, client_name: 'Rider', driver_name: driverId ? 'Driver' : null,
+    pickup_address: 'Pickup', pickup_latitude: 42.66, pickup_longitude: 21.16,
+    destination_address: 'Destination', destination_latitude: 42.67, destination_longitude: 21.18,
+    status, created_at: new Date(), requested_at: new Date(), started_at: null, ended_at: null,
+    distance_km: null, distance_source: null, duration_minutes: null,
+    estimated_distance_km: null, estimated_duration_minutes: null, base_price: 2, price_per_km: 0.75,
+    price: null, updated_at: new Date(), start_latitude: null, start_longitude: null, end_latitude: null, end_longitude: null,
+  });
+  const rides = [makeRide(1, 'pending'), makeRide(2, 'accepted', '300')];
+  const findRide = (id) => rides.find((ride) => ride.id === String(id));
+  const app = express();
+  app.use(express.json());
+  app.use('/api/admin', require('../auth/adminRoutes'));
+  app.use('/api/rides', require('../rides/routes'));
+
+  pool.query = async (sql, values = []) => {
+    if (sql.includes('SELECT id, full_name, email, role, created_at FROM users WHERE id = $1 LIMIT 1')) {
+      const user = users.get(String(values[0]));
+      return { rows: user ? [user] : [] };
+    }
+    if (sql.includes('SELECT id, full_name, email, role, created_at FROM users ORDER BY')) {
+      return { rows: [...users.values()] };
+    }
+    if (sql.includes('COUNT(*)::int AS count')) {
+      assert.match(sql, /status IN \('accepted', 'in_progress'\)/);
+      const busyDrivers = new Set(rides.filter((ride) => ['accepted', 'in_progress'].includes(ride.status)).map((ride) => ride.driver_id));
+      return { rows: [{ count: [...users.values()].filter((user) => user.role === 'driver' && !busyDrivers.has(user.id)).length }] };
+    }
+    if (sql.includes('FROM rides r') && sql.includes('WHERE r.client_id = $1')) {
+      return { rows: rides.filter((ride) => ride.client_id === String(values[0])) };
+    }
+    if (sql.includes('FROM rides r')) return { rows: rides };
+    if (sql.includes('UPDATE rides SET status = \'cancelled\'')) {
+      const ride = findRide(values[0]);
+      if (!ride || ride.client_id !== String(values[1]) || !['pending', 'accepted'].includes(ride.status)) return { rows: [] };
+      ride.status = 'cancelled';
+      return { rows: [{ id: ride.id, status: ride.status, updated_at: new Date() }] };
+    }
+    throw new Error(`Unexpected availability test query: ${sql}`);
+  };
+  pool.connect = async () => ({
+    async query(sql, values = []) {
+      if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql)) return { rows: [] };
+      if (sql.includes('SELECT id FROM users WHERE id = $1 AND role = \'driver\' FOR UPDATE')) {
+        const user = users.get(String(values[0]));
+        return { rows: user?.role === 'driver' ? [{ id: user.id }] : [] };
+      }
+      if (sql.includes('SELECT id FROM rides WHERE driver_id = $1 AND status IN')) {
+        assert.match(sql, /status IN \('accepted', 'in_progress'\)/);
+        const active = rides.find((ride) => ride.driver_id === String(values[0]) && ['accepted', 'in_progress'].includes(ride.status));
+        return { rows: active ? [{ id: active.id }] : [] };
+      }
+      if (sql.includes('UPDATE rides SET driver_id')) {
+        assert.match(sql, /NOT EXISTS[\s\S]*active\.status IN \('accepted', 'in_progress'\)/);
+        const [driverId, rideId] = values.map(String);
+        const ride = findRide(rideId);
+        const busy = rides.some((item) => item.driver_id === driverId && ['accepted', 'in_progress'].includes(item.status));
+        if (!ride || ride.status !== 'pending' || ride.driver_id || busy) return { rows: [] };
+        ride.driver_id = driverId;
+        ride.driver_name = users.get(driverId).full_name;
+        return { rows: [ride] };
+      }
+      if (sql.includes("UPDATE rides SET status = 'accepted'")) {
+        const [rideId, driverId] = values.map(String);
+        const ride = findRide(rideId);
+        if (!ride || ride.driver_id !== driverId || ride.status !== 'pending') return { rows: [] };
+        ride.status = 'accepted';
+        return { rows: [{ id: ride.id, status: ride.status, updated_at: new Date() }] };
+      }
+      throw new Error(`Unexpected availability transaction query: ${sql}`);
+    },
+    release() {},
+  });
+
+  const server = app.listen(0, '127.0.0.1');
+  servers.add(server);
+  await new Promise((resolve) => server.once('listening', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const makeHeaders = (id) => ({
+    Authorization: `Bearer ${jwt.sign({}, process.env.JWT_SECRET, {
+      subject: id, expiresIn: '5m', issuer: TOKEN_ISSUER, audience: TOKEN_AUDIENCE,
+    })}`,
+    'Content-Type': 'application/json',
+  });
+
+  const adminRides = await realFetch(`${origin}/api/admin/rides`, { headers: makeHeaders('100') });
+  const adminRideBody = await adminRides.json();
+  assert.equal(adminRides.status, 200);
+  assert.equal(adminRideBody.rides.find((ride) => ride.id === '1').status, 'pending');
+
+  const clientRides = await realFetch(`${origin}/api/rides`, { headers: makeHeaders('200') });
+  const clientRideBody = await clientRides.json();
+  assert.equal(clientRideBody.freeDriverCount, 0);
+  assert.equal(clientRideBody.rides.find((ride) => ride.id === '1').status, 'pending');
+
+  const blockedAssignment = await realFetch(`${origin}/api/admin/rides/1/assign-driver`, {
+    method: 'PATCH', headers: makeHeaders('100'), body: JSON.stringify({ driverId: '300' }),
+  });
+  assert.equal(blockedAssignment.status, 409);
+  assert.equal(findRide(1).status, 'pending');
+  assert.equal(findRide(1).driver_id, null);
+
+  const cancelled = await realFetch(`${origin}/api/rides/1/cancel`, { method: 'PATCH', headers: makeHeaders('200') });
+  assert.equal(cancelled.status, 200);
+  assert.equal(findRide(1).status, 'cancelled');
+
+  findRide(2).status = 'completed';
+  rides.push(makeRide(3, 'pending'));
+  const availableClientRides = await realFetch(`${origin}/api/rides`, { headers: makeHeaders('200') });
+  assert.equal((await availableClientRides.json()).freeDriverCount, 1);
+  const assigned = await realFetch(`${origin}/api/admin/rides/3/assign-driver`, {
+    method: 'PATCH', headers: makeHeaders('100'), body: JSON.stringify({ driverId: '300' }),
+  });
+  assert.equal(assigned.status, 200);
+  assert.equal(findRide(3).status, 'pending');
+
+  const accepted = await realFetch(`${origin}/api/rides/3/accept`, { method: 'PATCH', headers: makeHeaders('300') });
+  assert.equal(accepted.status, 200);
+  rides.push(makeRide(4, 'pending', '300'));
+  const blockedAccept = await realFetch(`${origin}/api/rides/4/accept`, { method: 'PATCH', headers: makeHeaders('300') });
+  assert.equal(blockedAccept.status, 409);
+  assert.equal(findRide(4).status, 'pending');
+
+  findRide(3).status = 'completed';
+  const acceptedAfterCompletion = await realFetch(`${origin}/api/rides/4/accept`, { method: 'PATCH', headers: makeHeaders('300') });
+  assert.equal(acceptedAfterCompletion.status, 200);
+  rides.push(makeRide(5, 'pending'));
+  const stillBusy = await realFetch(`${origin}/api/admin/rides/5/assign-driver`, {
+    method: 'PATCH', headers: makeHeaders('100'), body: JSON.stringify({ driverId: '300' }),
+  });
+  assert.equal(stillBusy.status, 409);
+  findRide(4).status = 'completed';
+  const afterCompletion = await realFetch(`${origin}/api/admin/rides/5/assign-driver`, {
+    method: 'PATCH', headers: makeHeaders('100'), body: JSON.stringify({ driverId: '300' }),
+  });
+  assert.equal(afterCompletion.status, 200);
+  assert.equal(findRide(5).status, 'pending');
+});

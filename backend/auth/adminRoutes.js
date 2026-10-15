@@ -80,20 +80,34 @@ router.patch('/rides/:id/assign-driver', requireAuth, requireRole('admin'), asyn
     return res.status(400).json({ message: 'Choose a valid driver.' });
   }
 
+  let client;
   try {
-    const driver = await pool.query('SELECT id FROM users WHERE id = $1 AND role = \'driver\' LIMIT 1', [String(driverId)]);
-    if (!driver.rows[0]) return res.status(404).json({ message: 'Driver not found.' });
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const driver = await client.query(
+      'SELECT id FROM users WHERE id = $1 AND role = \'driver\' FOR UPDATE', [String(driverId)],
+    );
+    if (!driver.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Driver not found.' });
+    }
 
-    const result = await pool.query(
+    const result = await client.query(
       `UPDATE rides SET driver_id = $1, updated_at = NOW()
        WHERE id = $2 AND status = 'pending' AND driver_id IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM rides active
+           WHERE active.driver_id = $1 AND active.status IN ('accepted', 'in_progress')
+         )
        RETURNING id, client_id, driver_id, pickup_latitude, pickup_longitude,
          destination_latitude, destination_longitude, status, requested_at, updated_at`,
       [String(driverId), rideId],
     );
     if (!result.rows[0]) {
-      return res.status(409).json({ message: 'This request has already been assigned or is no longer pending.' });
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'This driver is no longer available, or this request has already been assigned or is no longer pending.' });
     }
+    await client.query('COMMIT');
     return res.json({ ride: {
       id: String(result.rows[0].id),
       clientId: String(result.rows[0].client_id),
@@ -105,8 +119,11 @@ router.patch('/rides/:id/assign-driver', requireAuth, requireRole('admin'), asyn
       updatedAt: result.rows[0].updated_at,
     } });
   } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
     console.error('Ride assignment failed:', error.code || error.name);
     return res.status(500).json({ message: 'Unable to assign this request right now.' });
+  } finally {
+    client?.release();
   }
 });
 module.exports = router;
