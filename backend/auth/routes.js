@@ -2,7 +2,6 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { pool } = require('../db/pool');
-const { requireAuth } = require('./middleware');
 const { COOKIE_NAME, TOKEN_ISSUER, TOKEN_AUDIENCE, getJwtSecret } = require('./config');
 
 const router = express.Router();
@@ -33,6 +32,15 @@ function setSessionCookie(res, user) {
     sameSite: 'lax',
     path: '/',
     maxAge: oneDayMs,
+  });
+}
+
+function clearSessionCookie(res) {
+  res.clearCookie(COOKIE_NAME, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
   });
 }
 
@@ -105,17 +113,54 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/me', requireAuth, async (req, res) => {
+router.get('/me', async (req, res) => {
+  const cookieHeader = req.get('cookie') || '';
+  const cookieEntry = cookieHeader.split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${COOKIE_NAME}=`));
+  let cookieToken = null;
+  if (cookieEntry) {
+    try {
+      cookieToken = decodeURIComponent(cookieEntry.slice(COOKIE_NAME.length + 1));
+    } catch {
+      clearSessionCookie(res);
+      return res.status(401).json({ message: 'Your session is invalid. Please sign in again.' });
+    }
+  }
+  const authorization = req.get('authorization') || '';
+  const bearerToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : null;
+  const token = cookieToken || bearerToken;
+
+  if (!token) return res.json({ authenticated: false, user: null });
+
+  const secret = getJwtSecret();
+  if (!secret) {
+    return res.status(503).json({ message: 'Authentication is not configured. Set JWT_SECRET in backend/.env.' });
+  }
+
+  let payload;
+  try {
+    payload = jwt.verify(token, secret, { issuer: TOKEN_ISSUER, audience: TOKEN_AUDIENCE });
+  } catch {
+    clearSessionCookie(res);
+    return res.status(401).json({ message: 'Your session has expired or is invalid. Please sign in again.' });
+  }
+  if (!payload.sub) {
+    clearSessionCookie(res);
+    return res.status(401).json({ message: 'Your session is invalid. Please sign in again.' });
+  }
+
   try {
     const result = await pool.query(
       'SELECT id, full_name, email, role, created_at FROM users WHERE id = $1 LIMIT 1',
-      [req.user.id],
+      [payload.sub],
     );
-    if (!result.rows[0]) {
-      res.clearCookie(COOKIE_NAME, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/' });
-      return res.status(401).json({ message: 'This account no longer exists.' });
+    const row = result.rows[0];
+    if (!row || !['client', 'driver', 'admin'].includes(row.role)) {
+      clearSessionCookie(res);
+      return res.status(401).json({ message: 'This account is unavailable. Please sign in again.' });
     }
-    return res.json({ user: publicUser(result.rows[0]) });
+    return res.json({ authenticated: true, user: publicUser(row) });
   } catch (error) {
     console.error('Session lookup failed:', error.code || error.name);
     return res.status(500).json({ message: "Unable to load your session." });

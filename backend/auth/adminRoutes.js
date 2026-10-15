@@ -26,13 +26,15 @@ router.get('/rides', requireAuth, requireRole('admin'), async (_req, res) => {
   try {
     const result = await pool.query(
       `SELECT r.id, r.client_id, r.driver_id, c.full_name AS client_name,
-        d.full_name AS driver_name, r.pickup_latitude, r.pickup_longitude,
-        r.destination_latitude, r.destination_longitude, r.status,
-        r.requested_at, r.updated_at
+        d.full_name AS driver_name, r.pickup_address, r.pickup_latitude, r.pickup_longitude,
+        r.destination_address, r.destination_latitude, r.destination_longitude, r.status,
+        r.requested_at, r.started_at, r.ended_at, r.distance_km, r.distance_source,
+        r.duration_minutes, r.estimated_distance_km, r.estimated_duration_minutes,
+        r.base_price, r.price_per_km, r.price, r.updated_at
        FROM rides r
        JOIN users c ON c.id = r.client_id
        LEFT JOIN users d ON d.id = r.driver_id
-       ORDER BY r.requested_at DESC`,
+       ORDER BY r.created_at DESC`,
     );
     return res.json({ rides: result.rows.map((row) => ({
       id: String(row.id),
@@ -40,10 +42,25 @@ router.get('/rides', requireAuth, requireRole('admin'), async (_req, res) => {
       driverId: row.driver_id == null ? null : String(row.driver_id),
       clientName: row.client_name,
       driverName: row.driver_name,
-      pickup: { latitude: row.pickup_latitude, longitude: row.pickup_longitude },
-      destination: { latitude: row.destination_latitude, longitude: row.destination_longitude },
+      pickup: { address: row.pickup_address || null, latitude: row.pickup_latitude, longitude: row.pickup_longitude },
+      destination: { address: row.destination_address || null, latitude: row.destination_latitude, longitude: row.destination_longitude },
       status: row.status,
       requestedAt: row.requested_at,
+      startedAt: row.started_at,
+      endedAt: row.ended_at,
+      distanceKm: row.distance_km == null ? null : Number(row.distance_km),
+      distanceSource: row.distance_source || null,
+      durationMinutes: row.duration_minutes == null ? null : Number(row.duration_minutes),
+      estimatedDistanceKm: row.estimated_distance_km == null
+        ? (row.distance_source === 'osrm' && row.distance_km != null ? Number(row.distance_km) : null)
+        : Number(row.estimated_distance_km),
+      estimatedDurationMinutes: row.estimated_duration_minutes == null
+        ? null : Number(row.estimated_duration_minutes),
+      estimatedFare: row.distance_source === 'osrm' && row.price != null ? Number(row.price) : null,
+      actualElapsedDurationMinutes: row.duration_minutes == null ? null : Number(row.duration_minutes),
+      basePrice: row.base_price == null ? null : Number(row.base_price),
+      pricePerKm: row.price_per_km == null ? null : Number(row.price_per_km),
+      price: row.price == null ? null : Number(row.price),
       updatedAt: row.updated_at,
     })) });
   } catch (error) {

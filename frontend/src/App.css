@@ -74,6 +74,7 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .location-panel { padding: 24px 20px; }
 .location-panel .card-eyebrow { margin-bottom: 8px; }
 .location-help { margin: 0; color: #7b867f; font-size: 12px; line-height: 1.6; }
+.address-field { margin: 17px 0 0; }
 .location-tabs { display: grid; gap: 8px; margin-top: 22px; }
 .location-tab { display: flex; min-height: 42px; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid #e2e7e0; border-radius: 9px; background: #fff; color: #56635a; text-align: left; font-size: 12px; font-weight: 600; }
 .location-tab.active { border-color: #dceade; background: #f4faf4; color: #2e5838; }
@@ -109,6 +110,7 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 }
 .create-ride-button { margin-top: 20px; }
 .role-dashboard { flex: 1; padding: 54px 0 46px; }
+.client-history { margin-top: 24px; }
 .role-dashboard-heading { display: flex; align-items: center; justify-content: space-between; gap: 28px; margin-bottom: 30px; }
 .role-dashboard-heading .welcome-copy h1 { font-size: clamp(34px, 4vw, 48px); }
 .role-dashboard-heading .intro { margin-top: 12px; }
@@ -132,6 +134,8 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .request-coordinates p { display: grid; gap: 6px; margin: 0; }
 .request-coordinates strong { color: #56635a; font-size: 11px; }
 .request-coordinates span { color: #7b867f; font-size: 11px; font-variant-numeric: tabular-nums; }
+.request-coordinates small { color: #929b94; font-size: 10px; font-variant-numeric: tabular-nums; }
+.retry-estimate-button { margin-top: 14px; }
 .assignment-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; margin-top: 17px; }
 .assignment-controls select { min-width: 0; height: 42px; padding: 0 10px; border: 1px solid #dfe5dd; border-radius: 8px; background: #fff; color: #414e46; font: inherit; font-size: 12px; }
 .assignment-controls .primary-button { width: auto; min-height: 42px; margin: 0; padding: 0 16px; font-size: 11px; }
@@ -155,4 +159,16 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .trip-saved-details { display: grid; gap: 6px; margin-top: 15px; padding: 12px; border-radius: 8px; background: #f6f8f5; }
 .trip-saved-details p { margin: 0; color: #657169; font-size: 11px; line-height: 1.5; font-variant-numeric: tabular-nums; }
 .trip-saved-details strong { color: #414e46; }
+.trip-summary { margin-top: 12px; padding: 16px; border: 1px solid #dceade; border-radius: 10px; background: #f7fbf7; }
+.trip-summary h4 { margin: 0 0 12px; color: #2e5838; font-size: 13px; }
+.trip-summary-note { margin: -4px 0 12px; color: #95631b; font-size: 11px; line-height: 1.5; }
+.trip-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 12px; }
+.trip-summary-grid p { display: grid; gap: 5px; margin: 0; color: #657169; font-size: 10px; }
+.trip-summary-grid strong { color: #27332c; font-size: 13px; font-variant-numeric: tabular-nums; }
+.trip-summary-grid small { color: #879189; font-size: 10px; line-height: 1.4; }
+.trip-summary-grid .trip-total strong { color: #2e5838; font-size: 17px; }
+.driver-map-card { margin-top: 16px; overflow: hidden; border: 1px solid #e7ebe5; border-radius: 10px; background: #fff; }
+.driver-map-heading { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; color: #414e46; font-size: 11px; }
+.driver-map-heading span { color: #7b867f; }
+.driver-map-card .location-map { height: 300px; }
 @media (max-width: 520px) { .trip-actions .primary-button { width: 100%; } }

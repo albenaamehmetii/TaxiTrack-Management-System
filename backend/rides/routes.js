@@ -1,6 +1,7 @@
 const express = require('express');
 const { pool } = require('../db/pool');
 const { requireAuth, requireRole } = require('../auth/middleware');
+const { getRoadEstimate } = require('./estimate');
 
 const router = express.Router();
 
@@ -15,6 +16,41 @@ function validRideId(id) {
   return /^[0-9]+$/.test(id) && BigInt(id) > 0n;
 }
 
+function validGpsMetadata(accuracyM, speedMps) {
+  return Number.isFinite(accuracyM) && accuracyM >= 0 && accuracyM <= 10000
+    && (speedMps == null || (Number.isFinite(speedMps) && speedMps >= 0 && speedMps <= 1000));
+}
+
+function gpsPointBody(body) {
+  const latitude = body?.latitude;
+  const longitude = body?.longitude;
+  const accuracyM = body?.accuracyM;
+  const speedMps = body?.speedMps == null ? null : body.speedMps;
+  if (!validCoordinate(latitude, longitude) || !validGpsMetadata(accuracyM, speedMps)) return null;
+  const recordedAt = body?.recordedAt == null ? null : new Date(body.recordedAt);
+  if (recordedAt && (!Number.isFinite(recordedAt.getTime())
+    || recordedAt.getTime() > Date.now() + 30000
+    || recordedAt.getTime() < Date.now() - (24 * 60 * 60 * 1000))) return null;
+  return { latitude, longitude, accuracyM, speedMps, recordedAt };
+}
+
+async function insertGpsPoint(client, rideId, point) {
+  const result = await client.query(
+    `INSERT INTO ride_locations (ride_id, latitude, longitude, accuracy_m, speed_mps, recorded_at)
+     VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, NOW()))
+     RETURNING latitude, longitude, accuracy_m, speed_mps, recorded_at`,
+    [rideId, point.latitude, point.longitude, point.accuracyM, point.speedMps, point.recordedAt],
+  );
+  return result.rows[0];
+}
+
+function readFareSetting(name, fallback) {
+  const configured = process.env[name];
+  if (configured !== undefined && configured.trim() === '') return null;
+  const value = Number(configured ?? fallback);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
 function publicRide(row) {
   return {
     id: String(row.id),
@@ -22,39 +58,212 @@ function publicRide(row) {
     driverId: row.driver_id == null ? null : String(row.driver_id),
     clientName: row.client_name,
     driverName: row.driver_name,
-    pickup: { latitude: row.pickup_latitude, longitude: row.pickup_longitude },
-    destination: { latitude: row.destination_latitude, longitude: row.destination_longitude },
+    pickup: {
+      address: row.pickup_address || null,
+      latitude: row.pickup_latitude,
+      longitude: row.pickup_longitude,
+    },
+    destination: {
+      address: row.destination_address || null,
+      latitude: row.destination_latitude,
+      longitude: row.destination_longitude,
+    },
     start: row.start_latitude == null ? null : { latitude: row.start_latitude, longitude: row.start_longitude },
     end: row.end_latitude == null ? null : { latitude: row.end_latitude, longitude: row.end_longitude },
     status: row.status,
     requestedAt: row.requested_at,
     startedAt: row.started_at || null,
     endedAt: row.ended_at || null,
+    distanceKm: row.distance_km == null ? null : Number(row.distance_km),
+    distanceSource: row.distance_source || null,
+    durationMinutes: row.duration_minutes == null ? null : Number(row.duration_minutes),
+    estimatedDistanceKm: row.estimated_distance_km == null
+      ? (row.distance_source === 'osrm' && row.distance_km != null ? Number(row.distance_km) : null)
+      : Number(row.estimated_distance_km),
+    estimatedDurationMinutes: row.estimated_duration_minutes == null
+      ? null : Number(row.estimated_duration_minutes),
+    estimatedFare: row.distance_source === 'osrm' && row.price != null ? Number(row.price) : null,
+    estimateUnavailable: row.estimated_distance_km == null && row.distance_source !== 'osrm',
+    actualElapsedDurationMinutes: row.duration_minutes == null ? null : Number(row.duration_minutes),
+    basePrice: row.base_price == null ? null : Number(row.base_price),
+    pricePerKm: row.price_per_km == null ? null : Number(row.price_per_km),
+    price: row.price == null ? null : Number(row.price),
+    completionNote: row.status === 'completed' && row.estimated_distance_km == null
+      && row.distance_source !== 'osrm'
+      ? 'An estimate was not saved for this older trip.'
+      : null,
     updatedAt: row.updated_at,
   };
 }
 
+router.get('/', requireAuth, requireRole('client'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT r.id, r.client_id, r.driver_id, c.full_name AS client_name,
+        d.full_name AS driver_name, r.pickup_address, r.pickup_latitude, r.pickup_longitude,
+        r.destination_address, r.destination_latitude, r.destination_longitude,
+        r.start_latitude, r.start_longitude, r.end_latitude, r.end_longitude,
+        r.status, r.requested_at, r.started_at, r.ended_at,
+        r.distance_km, r.distance_source, r.duration_minutes,
+        r.estimated_distance_km, r.estimated_duration_minutes,
+        r.base_price, r.price_per_km, r.price, r.updated_at
+       FROM rides r
+       JOIN users c ON c.id = r.client_id
+       LEFT JOIN users d ON d.id = r.driver_id
+       WHERE r.client_id = $1
+       ORDER BY r.created_at DESC`,
+      [req.user.id],
+    );
+    return res.json({ rides: result.rows.map(publicRide) });
+  } catch (error) {
+    console.error('Client ride history load failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to load your ride history.' });
+  }
+});
+
 router.post('/', requireAuth, requireRole('client'), async (req, res) => {
-  const { pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude } = req.body || {};
+  const {
+    pickupAddress, pickupLatitude, pickupLongitude,
+    destinationAddress, destinationLatitude, destinationLongitude,
+  } = req.body || {};
+  const safePickupAddress = typeof pickupAddress === 'string' ? pickupAddress.trim() : '';
+  const safeDestinationAddress = typeof destinationAddress === 'string' ? destinationAddress.trim() : '';
+  if (!safePickupAddress || safePickupAddress.length > 300
+    || !safeDestinationAddress || safeDestinationAddress.length > 300) {
+    return res.status(400).json({ message: 'Enter a pickup address and a destination address (up to 300 characters each).' });
+  }
   if (!validCoordinate(pickupLatitude, pickupLongitude)
     || !validCoordinate(destinationLatitude, destinationLongitude)) {
     return res.status(400).json({ message: 'Choose valid pickup and destination points on the map.' });
   }
 
+  let estimate = null;
+  let estimateMessage = null;
+  try {
+    estimate = await getRoadEstimate(
+      { latitude: pickupLatitude, longitude: pickupLongitude },
+      { latitude: destinationLatitude, longitude: destinationLongitude },
+    );
+  } catch (error) {
+    estimateMessage = error.message || 'The road estimate is unavailable right now. You can request it again later.';
+  }
+
+  const basePrice = readFareSetting('RIDE_BASE_FARE', '2.00');
+  const pricePerKm = readFareSetting('RIDE_PRICE_PER_KM', '0.75');
+  if (basePrice === null || pricePerKm === null) {
+    return res.status(503).json({ message: 'Ride pricing is not configured correctly. Please try again later.' });
+  }
+  const roundedBasePrice = Number(basePrice.toFixed(2));
+  const roundedPricePerKm = Number(pricePerKm.toFixed(2));
+  const estimatedFare = estimate
+    ? Number((roundedBasePrice + estimate.estimatedDistanceKm * roundedPricePerKm).toFixed(2))
+    : null;
+
   try {
     const result = await pool.query(
       `INSERT INTO rides (
-        client_id, pickup_latitude, pickup_longitude,
-        destination_latitude, destination_longitude
-      ) VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, client_id, driver_id, pickup_latitude, pickup_longitude,
-        destination_latitude, destination_longitude, status, requested_at, updated_at`,
-      [req.user.id, pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude],
+        client_id, pickup_address, pickup_latitude, pickup_longitude,
+        destination_address, destination_latitude, destination_longitude,
+        estimated_distance_km, estimated_duration_minutes, distance_source,
+        base_price, price_per_km, price
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+        CASE WHEN $8::numeric IS NULL THEN NULL ELSE 'osrm' END, $10, $11, $12)
+      RETURNING id, client_id, driver_id, pickup_address, pickup_latitude, pickup_longitude,
+        destination_address, destination_latitude, destination_longitude, status,
+        requested_at, started_at, ended_at, estimated_distance_km,
+        estimated_duration_minutes, distance_source, base_price, price_per_km, price, updated_at`,
+      [
+        req.user.id, safePickupAddress, pickupLatitude, pickupLongitude,
+        safeDestinationAddress, destinationLatitude, destinationLongitude,
+        estimate?.estimatedDistanceKm ?? null, estimate?.estimatedDurationMinutes ?? null,
+        roundedBasePrice, roundedPricePerKm, estimatedFare,
+      ],
     );
-    return res.status(201).json({ ride: publicRide(result.rows[0]) });
+    return res.status(201).json({
+      ride: publicRide(result.rows[0]),
+      estimateMessage,
+    });
   } catch (error) {
     console.error('Ride request creation failed:', error.code || error.name);
     return res.status(500).json({ message: 'Unable to create your ride request right now.' });
+  }
+});
+
+router.post('/:id/estimate', requireAuth, requireRole('client'), async (req, res) => {
+  const rideId = req.params.id;
+  if (!validRideId(rideId)) return res.status(400).json({ message: 'Ride ID is invalid.' });
+
+  try {
+    const rideResult = await pool.query(
+      `SELECT id, pickup_latitude, pickup_longitude, destination_latitude,
+        destination_longitude, status, estimated_distance_km, estimated_duration_minutes,
+        distance_source, base_price, price_per_km, price
+       FROM rides WHERE id = $1 AND client_id = $2`,
+      [rideId, req.user.id],
+    );
+    const ride = rideResult.rows[0];
+    if (!ride) return res.status(404).json({ message: 'Ride not found.' });
+    if (ride.status !== 'pending') {
+      return res.status(409).json({ message: 'The estimate can only be updated before a driver accepts this request.' });
+    }
+    if (ride.estimated_distance_km != null && ride.estimated_duration_minutes != null
+      && ride.distance_source === 'osrm' && ride.price != null) {
+      return res.json({
+        ride: {
+          estimatedDistanceKm: Number(ride.estimated_distance_km),
+          estimatedDurationMinutes: Number(ride.estimated_duration_minutes),
+          estimatedFare: Number(ride.price),
+          basePrice: ride.base_price == null ? null : Number(ride.base_price),
+          pricePerKm: ride.price_per_km == null ? null : Number(ride.price_per_km),
+          estimateUnavailable: false,
+        },
+      });
+    }
+
+    let estimate;
+    try {
+      estimate = await getRoadEstimate(
+        { latitude: Number(ride.pickup_latitude), longitude: Number(ride.pickup_longitude) },
+        { latitude: Number(ride.destination_latitude), longitude: Number(ride.destination_longitude) },
+      );
+    } catch (error) {
+      return res.status(503).json({ message: error.message || 'The road estimate is unavailable right now. Please try again.' });
+    }
+
+    const basePrice = readFareSetting('RIDE_BASE_FARE', '2.00');
+    const pricePerKm = readFareSetting('RIDE_PRICE_PER_KM', '0.75');
+    if (basePrice === null || pricePerKm === null) {
+      return res.status(503).json({ message: 'Ride pricing is not configured correctly. Please try again later.' });
+    }
+    const roundedBasePrice = Number(basePrice.toFixed(2));
+    const roundedPricePerKm = Number(pricePerKm.toFixed(2));
+    const estimatedFare = Number((roundedBasePrice + estimate.estimatedDistanceKm * roundedPricePerKm).toFixed(2));
+    const updated = await pool.query(
+      `UPDATE rides SET estimated_distance_km = $1, estimated_duration_minutes = $2,
+        distance_source = 'osrm', base_price = $3, price_per_km = $4, price = $5,
+        updated_at = NOW()
+       WHERE id = $6 AND client_id = $7 AND status = 'pending'
+         AND estimated_distance_km IS NULL
+       RETURNING estimated_distance_km, estimated_duration_minutes,
+         distance_source, base_price, price_per_km, price`,
+      [estimate.estimatedDistanceKm, estimate.estimatedDurationMinutes,
+        roundedBasePrice, roundedPricePerKm, estimatedFare, rideId, req.user.id],
+    );
+    if (!updated.rows[0]) {
+      return res.status(409).json({ message: 'The request changed while the estimate was being calculated. Refresh your ride history and try again.' });
+    }
+    const row = updated.rows[0];
+    return res.json({ ride: {
+      estimatedDistanceKm: Number(row.estimated_distance_km),
+      estimatedDurationMinutes: Number(row.estimated_duration_minutes),
+      estimatedFare: Number(row.price),
+      basePrice: Number(row.base_price),
+      pricePerKm: Number(row.price_per_km),
+      estimateUnavailable: false,
+    } });
+  } catch (error) {
+    console.error('Ride estimate retry failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to calculate this estimate right now.' });
   }
 });
 
@@ -62,15 +271,20 @@ router.get('/assigned', requireAuth, requireRole('driver'), async (req, res) => 
   try {
     const result = await pool.query(
       `SELECT r.id, r.client_id, r.driver_id, c.full_name AS client_name,
-        d.full_name AS driver_name, r.pickup_latitude, r.pickup_longitude,
-        r.destination_latitude, r.destination_longitude,
+        d.full_name AS driver_name, r.pickup_address, r.pickup_latitude, r.pickup_longitude,
+        r.destination_address, r.destination_latitude, r.destination_longitude,
         r.start_latitude, r.start_longitude, r.end_latitude, r.end_longitude,
-        r.status, r.requested_at, r.started_at, r.ended_at, r.updated_at
+        r.status, r.requested_at, r.started_at, r.ended_at,
+        r.distance_km, r.distance_source, r.duration_minutes,
+        r.estimated_distance_km, r.estimated_duration_minutes,
+        r.base_price, r.price_per_km, r.price,
+        r.updated_at
        FROM rides r
        JOIN users c ON c.id = r.client_id
        JOIN users d ON d.id = r.driver_id
-       WHERE r.driver_id = $1 AND r.status IN ('pending', 'accepted', 'in_progress')
-       ORDER BY r.requested_at ASC`,
+       WHERE r.driver_id = $1
+         AND r.status IN ('pending', 'accepted', 'in_progress', 'completed')
+       ORDER BY r.created_at DESC`,
       [req.user.id],
     );
     return res.json({ rides: result.rows.map(publicRide) });
@@ -103,64 +317,153 @@ router.patch('/:id/accept', requireAuth, requireRole('driver'), async (req, res)
 
 router.patch('/:id/start', requireAuth, requireRole('driver'), async (req, res) => {
   const rideId = req.params.id;
-  const { latitude, longitude } = req.body || {};
+  const point = gpsPointBody(req.body);
   if (!validRideId(rideId)) return res.status(400).json({ message: 'Ride ID is invalid.' });
-  if (!validCoordinate(latitude, longitude)) {
-    return res.status(400).json({ message: 'Current coordinates are required to start the trip.' });
-  }
 
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    await client.query('BEGIN');
+    const result = await client.query(
       `UPDATE rides SET status = 'in_progress', start_latitude = $1,
         start_longitude = $2, started_at = NOW(), updated_at = NOW()
        WHERE id = $3 AND driver_id = $4 AND status = 'accepted' AND started_at IS NULL
        RETURNING id, status, start_latitude, start_longitude, started_at, updated_at`,
-      [latitude, longitude, rideId, req.user.id],
+      [
+        point && point.accuracyM <= 50 ? point.latitude : null,
+        point && point.accuracyM <= 50 ? point.longitude : null,
+        rideId, req.user.id,
+      ],
     );
     if (!result.rows[0]) {
+      await client.query('ROLLBACK');
       return res.status(409).json({ message: 'This request is not assigned to you or is not ready to start.' });
     }
+    await client.query('COMMIT');
     const row = result.rows[0];
     return res.json({ ride: {
       id: String(row.id), status: row.status,
-      start: { latitude: row.start_latitude, longitude: row.start_longitude },
+      start: row.start_latitude == null ? null : { latitude: row.start_latitude, longitude: row.start_longitude },
       startedAt: row.started_at, updatedAt: row.updated_at,
     } });
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Trip start failed:', error.code || error.name);
     return res.status(500).json({ message: 'Unable to start this trip right now.' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/:id/locations', requireAuth, requireRole('driver'), async (req, res) => {
+  const rideId = req.params.id;
+  const point = gpsPointBody(req.body);
+  if (!validRideId(rideId)) return res.status(400).json({ message: 'Ride ID is invalid.' });
+  if (!point) return res.status(400).json({ message: 'A valid GPS position and accuracy are required.' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const ride = await client.query(
+      `SELECT id, started_at FROM rides WHERE id = $1 AND driver_id = $2 AND status = 'in_progress'
+       AND started_at IS NOT NULL AND ended_at IS NULL FOR UPDATE`,
+      [rideId, req.user.id],
+    );
+    if (!ride.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'This trip is not assigned to you or is no longer in progress.' });
+    }
+    if (point.recordedAt
+      && point.recordedAt.getTime() < new Date(ride.rows[0].started_at).getTime() - 30000) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'The GPS timestamp is earlier than this trip.' });
+    }
+    const saved = await insertGpsPoint(client, rideId, point);
+    await client.query('COMMIT');
+    return res.status(201).json({ saved: true, location: {
+      latitude: Number(saved.latitude), longitude: Number(saved.longitude),
+      accuracyM: Number(saved.accuracy_m), speedMps: saved.speed_mps == null ? null : Number(saved.speed_mps),
+      recordedAt: saved.recorded_at,
+    } });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('GPS point save failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to save this GPS position. It will be retried.' });
+  } finally {
+    client.release();
+  }
+});
+
+router.get('/:id/locations', requireAuth, requireRole('driver'), async (req, res) => {
+  const rideId = req.params.id;
+  if (!validRideId(rideId)) return res.status(400).json({ message: 'Ride ID is invalid.' });
+  try {
+    const ride = await pool.query(
+      `SELECT id FROM rides WHERE id = $1 AND driver_id = $2
+       AND status = 'in_progress'`,
+      [rideId, req.user.id],
+    );
+    if (!ride.rows[0]) return res.status(404).json({ message: 'Ride not found.' });
+    const result = await pool.query(
+      `SELECT latitude, longitude, accuracy_m, speed_mps, recorded_at
+       FROM ride_locations WHERE ride_id = $1 ORDER BY recorded_at, id`,
+      [rideId],
+    );
+    return res.json({ locations: result.rows.map((row) => ({
+      latitude: Number(row.latitude), longitude: Number(row.longitude),
+      accuracyM: Number(row.accuracy_m), speedMps: row.speed_mps == null ? null : Number(row.speed_mps),
+      recordedAt: row.recorded_at,
+    })) });
+  } catch (error) {
+    console.error('GPS trace load failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to load this trip’s GPS trace.' });
   }
 });
 
 router.patch('/:id/end', requireAuth, requireRole('driver'), async (req, res) => {
   const rideId = req.params.id;
-  const { latitude, longitude } = req.body || {};
   if (!validRideId(rideId)) return res.status(400).json({ message: 'Ride ID is invalid.' });
-  if (!validCoordinate(latitude, longitude)) {
-    return res.status(400).json({ message: 'Current coordinates are required to end the trip.' });
-  }
 
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
-      `UPDATE rides SET status = 'completed', end_latitude = $1,
-        end_longitude = $2, ended_at = NOW(), updated_at = NOW()
-       WHERE id = $3 AND driver_id = $4 AND status = 'in_progress'
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE rides SET status = 'completed', ended_at = NOW(), updated_at = NOW(),
+        duration_minutes = GREATEST(0,
+          CEIL(EXTRACT(EPOCH FROM (NOW() - started_at)) / 60.0)::INTEGER)
+       WHERE id = $1 AND driver_id = $2 AND status = 'in_progress'
          AND started_at IS NOT NULL AND ended_at IS NULL
-       RETURNING id, status, end_latitude, end_longitude, ended_at, updated_at`,
-      [latitude, longitude, rideId, req.user.id],
+       RETURNING id, status, end_latitude, end_longitude, ended_at, updated_at,
+         distance_km, distance_source, duration_minutes, estimated_distance_km,
+         estimated_duration_minutes, base_price, price_per_km, price`,
+      [rideId, req.user.id],
     );
     if (!result.rows[0]) {
+      await client.query('ROLLBACK');
       return res.status(409).json({ message: 'This request is not assigned to you or is not in progress.' });
     }
+    await client.query('COMMIT');
     const row = result.rows[0];
-    return res.json({ ride: {
+    return res.json({ message: 'The driver has arrived. The trip is complete.', ride: {
       id: String(row.id), status: row.status,
-      end: { latitude: row.end_latitude, longitude: row.end_longitude },
+      end: row.end_latitude == null ? null : { latitude: row.end_latitude, longitude: row.end_longitude },
       endedAt: row.ended_at, updatedAt: row.updated_at,
+      distanceKm: row.distance_km == null ? null : Number(row.distance_km),
+      durationMinutes: row.duration_minutes,
+      estimatedDistanceKm: row.estimated_distance_km == null ? null : Number(row.estimated_distance_km),
+      estimatedDurationMinutes: row.estimated_duration_minutes == null ? null : Number(row.estimated_duration_minutes),
+      distanceSource: row.distance_source,
+      basePrice: row.base_price == null ? null : Number(row.base_price),
+      pricePerKm: row.price_per_km == null ? null : Number(row.price_per_km),
+      price: row.price == null ? null : Number(row.price),
+      estimatedFare: row.distance_source === 'osrm' && row.price != null ? Number(row.price) : null,
+      actualElapsedDurationMinutes: row.duration_minutes,
     } });
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Trip end failed:', error.code || error.name);
     return res.status(500).json({ message: 'Unable to end this trip right now.' });
+  } finally {
+    client.release();
   }
 });
 
