@@ -28,7 +28,7 @@ router.get('/rides', requireAuth, requireRole('admin'), async (_req, res) => {
       `SELECT r.id, r.client_id, r.driver_id, c.full_name AS client_name,
         d.full_name AS driver_name, r.pickup_address, r.pickup_latitude, r.pickup_longitude,
         r.destination_address, r.destination_latitude, r.destination_longitude, r.status,
-        r.requested_at, r.started_at, r.ended_at, r.distance_km, r.distance_source,
+        r.created_at, r.requested_at, r.started_at, r.ended_at, r.distance_km, r.distance_source,
         r.duration_minutes, r.estimated_distance_km, r.estimated_duration_minutes,
         r.base_price, r.price_per_km, r.price, r.updated_at
        FROM rides r
@@ -45,6 +45,7 @@ router.get('/rides', requireAuth, requireRole('admin'), async (_req, res) => {
       pickup: { address: row.pickup_address || null, latitude: row.pickup_latitude, longitude: row.pickup_longitude },
       destination: { address: row.destination_address || null, latitude: row.destination_latitude, longitude: row.destination_longitude },
       status: row.status,
+      createdAt: row.created_at,
       requestedAt: row.requested_at,
       startedAt: row.started_at,
       endedAt: row.ended_at,

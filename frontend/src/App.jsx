@@ -5,7 +5,6 @@ import './App.css'
 import { fetchSuggestedRoute } from './routing.js'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
-const ROLE_LABELS = { client: 'Client', driver: 'Driver', admin: 'Administrator' }
 const DEFAULT_CENTER = [42.6629, 21.1655]
 
 function LocationMap({ activeLocation, pickup, destination, onSelect, driverLocation = null, rideTrace = [], suggestedRoute = [] }) {
@@ -155,6 +154,23 @@ function formatRideTime(value) {
   }).format(date)
 }
 
+function formatRideAge(value) {
+  const timestamp = new Date(value).getTime()
+  if (Number.isNaN(timestamp)) return 'Time unavailable'
+  const hours = Math.max(0, Math.floor((Date.now() - timestamp) / 3600000))
+  if (hours < 1) return 'less than an hour ago'
+  return `about ${hours} ${hours === 1 ? 'hour' : 'hours'} ago`
+}
+
+function rideDateForFilter(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Belgrade', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date).map(({ type, value: partValue }) => [type, partValue]))
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
 function TripSummary({ ride }) {
   return (
     <section className="trip-summary" aria-label={`Trip summary for request ${ride.id}`}>
@@ -179,6 +195,22 @@ function AdminDashboard({ user, onLogout }) {
   const [notice, setNotice] = useState('')
   const [assigningRide, setAssigningRide] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [clientFilter, setClientFilter] = useState('')
+  const [driverFilter, setDriverFilter] = useState('')
+  const clients = [...new Map(rides.map((ride) => [ride.clientId, ride.clientName])).entries()]
+  const currentRides = rides.filter((ride) => !['completed', 'cancelled'].includes(ride.status))
+  const pastRides = rides.filter((ride) => ['completed', 'cancelled'].includes(ride.status))
+  const filteredPastRides = pastRides.filter((ride) => {
+    const rideDate = rideDateForFilter(ride.createdAt || ride.requestedAt)
+    return (!dateFrom || rideDate >= dateFrom)
+      && (!dateTo || rideDate <= dateTo)
+      && (!clientFilter || ride.clientId === clientFilter)
+      && (!driverFilter || (driverFilter === 'unassigned'
+        ? !ride.driverId
+        : ride.driverId === driverFilter))
+  })
 
   useEffect(() => {
     let active = true
@@ -234,8 +266,53 @@ function AdminDashboard({ user, onLogout }) {
     }
   }
 
+  function renderRideRequest(ride) {
+    const isPast = ['completed', 'cancelled'].includes(ride.status)
+    if (isPast) {
+      return (
+        <article className="request-card past-request-card" key={ride.id}>
+          <div className="request-card-top">
+            <div><p className="card-eyebrow">REQUEST #{ride.id}</p><h3>{ride.clientName}</h3><p className="request-time">{formatRideTime(ride.createdAt || ride.requestedAt)}</p></div>
+            <span className={`status-badge status-${ride.status}`}>{ride.status.replace('_', ' ')}</span>
+          </div>
+          <div className="request-coordinates">
+            <p><strong>Pickup</strong><span>Map point ({formatCoordinates(ride.pickup)})</span></p>
+            <p><strong>Destination</strong><span>Map point ({formatCoordinates(ride.destination)})</span></p>
+          </div>
+          <p className="assigned-driver">Assigned to {ride.driverName || '—'}</p>
+          {ride.status === 'completed' && <details className="past-request-details"><summary>More trip details</summary><TripSummary ride={ride} /></details>}
+        </article>
+      )
+    }
+    return (
+      <article className="request-card" key={ride.id}>
+        <div className="request-card-top">
+          <div><p className="card-eyebrow">REQUEST #{ride.id}</p><h3>{ride.clientName}</h3><p className="request-time">{formatRideTime(ride.createdAt || ride.requestedAt)}</p></div>
+          <span className={`status-badge status-${ride.status}`}>{ride.status.replace('_', ' ')}</span>
+        </div>
+        <div className="request-coordinates">
+          <p><strong>Pickup</strong><span>{ride.pickup.address || 'Address not recorded'}</span><small>{formatCoordinates(ride.pickup)}</small></p>
+          <p><strong>Destination</strong><span>{ride.destination.address || 'Address not recorded'}</span><small>{formatCoordinates(ride.destination)}</small></p>
+        </div>
+        {ride.driverId ? <p className="assigned-driver">Assigned to {ride.driverName || 'a driver'}</p> : ride.status === 'pending' ? (
+          <div className="assignment-controls">
+            <select aria-label={`Choose a driver for request ${ride.id}`} value={selectedDrivers[ride.id] || ''} onChange={(event) => setSelectedDrivers((current) => ({ ...current, [ride.id]: event.target.value }))}>
+              <option value="">Choose a driver</option>
+              {drivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.fullName}</option>)}
+            </select>
+            <button className="primary-button" type="button" onClick={() => assignDriver(ride.id)} disabled={assigningRide === ride.id || drivers.length === 0}>
+              {assigningRide === ride.id ? 'Assigning…' : 'Assign driver'}
+            </button>
+            {drivers.length === 0 && <small>Create a driver account before assigning a request.</small>}
+          </div>
+        ) : null}
+        {ride.status === 'completed' && <TripSummary ride={ride} />}
+      </article>
+    )
+  }
+
   return (
-    <section className="role-dashboard">
+    <section className="role-dashboard admin-dashboard">
       <div className="role-dashboard-heading">
         <div className="welcome-copy">
           <p className="eyebrow">ADMIN DASHBOARD</p>
@@ -256,32 +333,37 @@ function AdminDashboard({ user, onLogout }) {
           <button className="secondary-button refresh-button" type="button" onClick={() => setReloadKey((value) => value + 1)} disabled={loading}>Refresh</button>
         </div>
         {loading ? <p className="empty-state">Loading requests…</p> : rides.length === 0 ? <p className="empty-state">There are no ride requests yet.</p> : (
-          <div className="request-list">
-            {rides.map((ride) => (
-              <article className="request-card" key={ride.id}>
-                <div className="request-card-top">
-                  <div><p className="card-eyebrow">REQUEST #{ride.id}</p><h3>{ride.clientName}</h3><p className="request-time">{formatRideTime(ride.requestedAt)}</p></div>
-                  <span className={`status-badge status-${ride.status}`}>{ride.status.replace('_', ' ')}</span>
-                </div>
-                <div className="request-coordinates">
-                  <p><strong>Pickup</strong><span>{ride.pickup.address || 'Address not recorded'}</span><small>{formatCoordinates(ride.pickup)}</small></p>
-                  <p><strong>Destination</strong><span>{ride.destination.address || 'Address not recorded'}</span><small>{formatCoordinates(ride.destination)}</small></p>
-                </div>
-                {ride.driverId ? <p className="assigned-driver">Assigned to {ride.driverName || 'a driver'}</p> : ride.status === 'pending' ? (
-                  <div className="assignment-controls">
-                    <select aria-label={`Choose a driver for request ${ride.id}`} value={selectedDrivers[ride.id] || ''} onChange={(event) => setSelectedDrivers((current) => ({ ...current, [ride.id]: event.target.value }))}>
-                      <option value="">Choose a driver</option>
-                      {drivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.fullName}</option>)}
-                    </select>
-                    <button className="primary-button" type="button" onClick={() => assignDriver(ride.id)} disabled={assigningRide === ride.id || drivers.length === 0}>
-                      {assigningRide === ride.id ? 'Assigning…' : 'Assign driver'}
-                    </button>
-                    {drivers.length === 0 && <small>Create a driver account before assigning a request.</small>}
-                  </div>
-                ) : null}
-                {ride.status === 'completed' && <TripSummary ride={ride} />}
-              </article>
-            ))}
+          <div className="admin-request-groups">
+            {currentRides.length > 0 && <section className="admin-request-group">
+              <div className="admin-group-heading"><h3>Current requests</h3><span>{currentRides.length}</span></div>
+              <div className="request-list">{currentRides.map(renderRideRequest)}</div>
+            </section>}
+            <section className="admin-request-group past-requests">
+              <div className="admin-group-heading"><h3>Past requests</h3><span>{filteredPastRides.length}</span></div>
+              <div className="ride-filters" aria-label="Filter past requests">
+                <label><span>From date</span><input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
+                <label><span>To date</span><input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
+                <label><span>Client</span><select value={clientFilter} onChange={(event) => setClientFilter(event.target.value)}>
+                  <option value="">All clients</option>
+                  {clients.map(([clientId, clientName]) => <option key={clientId} value={clientId}>{clientName}</option>)}
+                </select></label>
+                <label><span>Driver</span><select value={driverFilter} onChange={(event) => setDriverFilter(event.target.value)}>
+                  <option value="">All drivers</option>
+                  <option value="unassigned">Unassigned</option>
+                  {drivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.fullName}</option>)}
+                </select></label>
+                <button className="secondary-button clear-filters-button" type="button" onClick={() => {
+                  setDateFrom('')
+                  setDateTo('')
+                  setClientFilter('')
+                  setDriverFilter('')
+                }}>Clear filters</button>
+              </div>
+              <p className="filter-count">Showing {filteredPastRides.length} of {pastRides.length} past requests</p>
+              {filteredPastRides.length === 0 ? (
+                <p className="empty-state">{pastRides.length === 0 ? 'No past requests yet.' : 'No past requests match these filters.'}</p>
+              ) : <div className="request-list">{filteredPastRides.map(renderRideRequest)}</div>}
+            </section>
           </div>
         )}
       </div>
@@ -455,27 +537,28 @@ function DriverDashboard({ user, onLogout }) {
 
 function ClientRideHistory({ rides, loading, error, onRetryEstimate, estimateBusyId }) {
   return (
-    <section className="request-section client-history">
-      <div className="request-section-heading">
-        <div><h2>My rides</h2><p>Your ride requests and trip history.</p></div>
-      </div>
+    <section className="rider-history-panel">
+      <h2>Past trips</h2>
       {error && <div className="notice error" role="alert">{error}</div>}
       {loading ? <p className="empty-state">Loading your rides…</p> : rides.length === 0 ? (
-        <p className="empty-state">You have not requested a ride yet.</p>
+        <p className="empty-state">No rides yet.</p>
       ) : (
-        <div className="request-list">
+        <div className="rider-history-list">
           {rides.map((ride) => (
-            <article className="request-card" key={ride.id}>
-              <div className="request-card-top">
-                <div><p className="card-eyebrow">RIDE #{ride.id}</p><p className="request-time">{formatRideTime(ride.requestedAt)}</p></div>
+            <article className="rider-history-card" key={ride.id}>
+              <div className="rider-history-top">
+                <strong>{ride.pickup.address?.startsWith('Map point') ? 'Current location' : ride.pickup.address || 'Current location'} → {formatCoordinates(ride.destination)}</strong>
                 <span className={`status-badge status-${ride.status}`}>{ride.status.replace('_', ' ')}</span>
               </div>
-              <div className="request-coordinates">
-                <p><strong>Pickup</strong><span>{ride.pickup.address || formatCoordinates(ride.pickup)}</span></p>
-                <p><strong>Destination</strong><span>{ride.destination.address || formatCoordinates(ride.destination)}</span></p>
+              <div className="rider-history-meta">
+                <span>{formatRideAge(ride.requestedAt)}</span>
+                <span>{ride.estimatedFare == null && ride.price == null ? '—' : `€${Number(ride.estimatedFare ?? ride.price).toFixed(2)}`}</span>
               </div>
-              {ride.driverName && <p className="assigned-driver">Driver: {ride.driverName}</p>}
-              <TripSummary ride={ride} />
+              {(ride.driverName || ride.status === 'completed') && <details className="rider-history-details">
+                <summary>Ride details</summary>
+                {ride.driverName && <p>Driver: {ride.driverName}</p>}
+                <TripSummary ride={ride} />
+              </details>}
               {ride.status === 'pending' && ride.estimateUnavailable && (
                 <button className="secondary-button retry-estimate-button" type="button" onClick={() => onRetryEstimate(ride)} disabled={estimateBusyId === ride.id}>
                   {estimateBusyId === ride.id ? 'Retrying estimate…' : 'Retry route estimate'}
@@ -489,10 +572,73 @@ function ClientRideHistory({ rides, loading, error, onRetryEstimate, estimateBus
   )
 }
 
+function ClientRideStateScreen({ ride, state, onReturn }) {
+  const isCancelled = state === 'cancelled'
+  const pickupCoordinates = formatCoordinates(ride.pickup)
+
+  return (
+    <section className={`rider-state-screen ${isCancelled ? 'is-cancelled' : 'is-on-way'}`} aria-live="polite">
+      <span className="rider-state-icon" aria-hidden="true">{isCancelled ? '×' : '↗'}</span>
+      <p className="rider-state-eyebrow">{isCancelled ? 'CANCELLED' : 'TRIP IN PROGRESS'}</p>
+      <h1>{isCancelled ? 'CANCELLED' : 'Driver on the way'}</h1>
+      <p className="rider-state-message">{isCancelled ? 'This request was cancelled' : `${ride.driverName || 'Your driver'} has started the trip.`}</p>
+      <p className="rider-state-location">Current location - {pickupCoordinates}</p>
+      <button className="primary-button" type="button" onClick={onReturn}>Back to dashboard</button>
+    </section>
+  )
+}
+
+function ClientRideProgress({ ride, cancelling, cancelError, onCancel, onReturn }) {
+  const [confirmingCancel, setConfirmingCancel] = useState(false)
+  const isCancelled = ride.status === 'cancelled'
+  const isCompleted = ride.status === 'completed'
+  const isAccepted = ride.status === 'accepted'
+  const canCancel = ['pending', 'accepted'].includes(ride.status)
+
+  if (isCancelled || ride.status === 'in_progress') {
+    return <ClientRideStateScreen ride={ride} state={ride.status} onReturn={onReturn} />
+  }
+
+  return (
+    <section className="client-ride-progress" aria-live="polite">
+      <div className="client-ride-progress-heading">
+        <div>
+          <p className="card-eyebrow">REQUEST #{ride.id}</p>
+          <h2>{isCompleted ? 'Ride completed' : isAccepted ? 'Ride accepted' : 'Ride request sent'}</h2>
+          <p>{isCompleted ? 'Your trip is complete.' : isAccepted ? `Accepted by ${ride.driverName || 'your driver'}.` : ride.driverName ? `${ride.driverName} has your request and has not accepted it yet.` : 'Waiting for a driver to accept your request.'}</p>
+        </div>
+        <span className={`status-badge status-${ride.status}`}>{ride.status.replace('_', ' ')}</span>
+      </div>
+      <div className="client-ride-facts">
+        <div><span>Estimated price</span><strong>{ride.estimatedFare == null ? 'Unavailable' : `€${Number(ride.estimatedFare).toFixed(2)}`}</strong></div>
+        <div><span>Estimated time</span><strong>{ride.estimatedDurationMinutes == null ? 'Unavailable' : `${ride.estimatedDurationMinutes} min`}</strong></div>
+      </div>
+      <div className="client-ride-locations">
+        <p><span>Pickup</span><strong>{ride.pickup.address || `Map point (${formatCoordinates(ride.pickup)})`}</strong></p>
+        <p><span>Destination</span><strong>{ride.destination.address || `Map point (${formatCoordinates(ride.destination)})`}</strong></p>
+      </div>
+      {cancelError && <div className="notice error" role="alert">{cancelError}</div>}
+      <div className="client-ride-actions">
+        {canCancel && !confirmingCancel && <button className="cancel-ride-button" type="button" onClick={() => setConfirmingCancel(true)} disabled={cancelling}>Cancel request</button>}
+        {isCompleted && <button className="primary-button" type="button" onClick={onReturn}>Back to dashboard</button>}
+      </div>
+      {canCancel && confirmingCancel && <div className="cancel-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="cancel-confirm-title">
+        <div><h3 id="cancel-confirm-title">Are you sure you want to cancel this ride?</h3><p>Your driver will be notified that this request was cancelled.</p></div>
+        <div className="cancel-confirm-actions">
+          <button className="keep-ride-button" type="button" onClick={() => setConfirmingCancel(false)} disabled={cancelling}>Keep ride</button>
+          <button className="confirm-cancel-button" type="button" onClick={() => onCancel(ride)} disabled={cancelling}>{cancelling ? 'Cancelling…' : 'Yes, cancel ride'}</button>
+        </div>
+      </div>}
+      <p className="client-ride-updated">Status updates automatically while waiting for your driver.</p>
+    </section>
+  )
+}
+
 function App() {
   const [user, setUser] = useState(null)
   const [mode, setMode] = useState('login')
   const [fullName, setFullName] = useState('')
+  const [registrationRole, setRegistrationRole] = useState('client')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [notice, setNotice] = useState('')
@@ -513,7 +659,16 @@ function App() {
   const [clientRidesLoading, setClientRidesLoading] = useState(true)
   const [clientRidesError, setClientRidesError] = useState('')
   const [clientRidesReloadKey, setClientRidesReloadKey] = useState(0)
+  const [focusedClientRideId, setFocusedClientRideId] = useState(null)
+  const [hideClientRideProgress, setHideClientRideProgress] = useState(false)
+  const [cancellingClientRideId, setCancellingClientRideId] = useState(null)
+  const [clientCancelError, setClientCancelError] = useState('')
   const [estimateBusyId, setEstimateBusyId] = useState(null)
+  const clientRidesAwaitingDriver = clientRides.some((ride) => ['pending', 'accepted'].includes(ride.status))
+  const focusedClientRide = clientRides.find((ride) => ride.id === focusedClientRideId)
+  const activeClientRide = hideClientRideProgress
+    ? null
+    : focusedClientRide || clientRides.find((ride) => ['pending', 'accepted', 'in_progress'].includes(ride.status))
 
   useEffect(() => {
     let active = true
@@ -546,23 +701,51 @@ function App() {
   useEffect(() => {
     if (user?.role !== 'client') return undefined
     let active = true
-    async function loadClientRides() {
-      setClientRidesLoading(true)
+    async function loadClientRides(showLoading = false) {
+      if (showLoading) setClientRidesLoading(true)
       setClientRidesError('')
       try {
         const response = await fetch(`${API_URL}/api/rides`, { credentials: 'include' })
         const data = await response.json()
         if (!response.ok) throw new Error(data.message || 'Unable to load your ride history.')
-        if (active) setClientRides(data.rides || [])
+        if (active) {
+          setClientRides(data.rides || [])
+        }
       } catch (error) {
         if (active) setClientRidesError(error.message || 'Unable to load your ride history.')
       } finally {
         if (active) setClientRidesLoading(false)
       }
     }
-    loadClientRides()
-    return () => { active = false }
-  }, [user?.id, user?.role, clientRidesReloadKey])
+    loadClientRides(true)
+    const refreshTimer = clientRidesAwaitingDriver
+      ? window.setInterval(() => loadClientRides(), 5000)
+      : null
+    return () => {
+      active = false
+      if (refreshTimer) window.clearInterval(refreshTimer)
+    }
+  }, [user?.id, user?.role, clientRidesReloadKey, clientRidesAwaitingDriver])
+
+  async function cancelClientRide(ride) {
+    setCancellingClientRideId(ride.id)
+    setClientCancelError('')
+    try {
+      const response = await fetch(`${API_URL}/api/rides/${ride.id}/cancel`, {
+        method: 'PATCH', credentials: 'include',
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message || 'Unable to cancel this request.')
+      setClientRides((current) => current.map((item) => (
+        item.id === ride.id ? { ...item, ...data.ride } : item
+      )))
+      setFocusedClientRideId(ride.id)
+    } catch (error) {
+      setClientCancelError(error.message || 'Unable to cancel this request.')
+    } finally {
+      setCancellingClientRideId(null)
+    }
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -571,7 +754,7 @@ function App() {
 
     try {
       const endpoint = mode === 'register' ? 'register' : 'login'
-      const payload = mode === 'register' ? { fullName, email, password } : { email, password }
+      const payload = mode === 'register' ? { fullName, email, password, role: registrationRole } : { email, password }
       const response = await fetch(`${API_URL}/api/auth/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -658,6 +841,10 @@ function App() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Unable to create your ride request.')
+      setClientRides((current) => [data.ride, ...current.filter((ride) => ride.id !== data.ride.id)])
+      setFocusedClientRideId(data.ride.id)
+      setHideClientRideProgress(false)
+      setClientCancelError('')
       setRideFeedback(data.ride.estimateUnavailable
         ? `Request #${data.ride.id} sent. The route estimate is unavailable, so no distance, duration, or fare has been added. You can retry the estimate from My rides.`
         : `Request #${data.ride.id} sent. Estimated road distance: ${Number(data.ride.estimatedDistanceKm).toFixed(3)} km; estimated travel time: ${data.ride.estimatedDurationMinutes} min; estimated fare: €${Number(data.ride.estimatedFare).toFixed(2)}.`)
@@ -701,76 +888,67 @@ function App() {
   }
 
   return (
-    <main className="page-shell">
+    <main className={`page-shell ${user ? 'app-page' : 'auth-page'}${user?.role === 'client' ? ' rider-page' : ''}`}>
       <header className="topbar">
         <a className="brand" href="/" aria-label="TaxiTrack home">
           <span className="brand-icon" aria-hidden="true">T</span>
-          <span>TaxiTrack</span>
+          <span>{user?.role === 'client' ? 'Ride Bidding' : 'TaxiTrack'}</span>
         </a>
-        <span className="topbar-note">Simple ride management</span>
+        {user?.role === 'client' ? (
+          <div className="rider-topbar-tools">
+            <span className="rider-live"><i /> Live</span>
+            <span className="rider-notification" aria-label="Notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg></span>
+            <span className="rider-identity"><strong>{user.fullName}</strong><small>Rider</small></span>
+            <button className="rider-logout" type="button" onClick={handleLogout}>Log out</button>
+          </div>
+        ) : <span className="topbar-note">Simple ride management</span>}
       </header>
 
       {user ? (
         user.role === 'client' ? (
           <section className="client-dashboard">
-            <div className="client-dashboard-heading">
-              <div className="welcome-copy">
-                <p className="eyebrow">CLIENT DASHBOARD</p>
-                <h1>Choose your locations.</h1>
-                <p className="intro">Hi {user.fullName.split(' ')[0]}. Select your pickup and destination on the map.</p>
-              </div>
-              <div className="client-account">
-                <span className="avatar" aria-hidden="true">{user.fullName.charAt(0).toUpperCase()}</span>
-                <span className="client-account-info"><strong>{user.fullName}</strong><span>{ROLE_LABELS[user.role]}</span></span>
-                <button className="secondary-button" type="button" onClick={handleLogout}>Sign out</button>
-              </div>
-            </div>
-            <div className="location-layout">
-              <aside className="location-panel">
-                <p className="card-eyebrow">RIDE LOCATIONS</p>
-                <p className="location-help">Choose Pickup or Destination, click the map, then edit the generated point label if you know the street address.</p>
-                <div className="location-tabs" role="group" aria-label="Choose which location to set">
-                  <button className={activeLocation === 'pickup' ? 'location-tab active' : 'location-tab'} type="button" onClick={() => setActiveLocation('pickup')}>
-                    <span className="location-dot pickup-dot" /> Pickup
-                  </button>
-                  <button className={activeLocation === 'destination' ? 'location-tab active' : 'location-tab'} type="button" onClick={() => setActiveLocation('destination')}>
-                    <span className="location-dot destination-dot" /> Destination
-                  </button>
+            {activeClientRide ? (
+              <ClientRideProgress
+                ride={activeClientRide}
+                cancelling={cancellingClientRideId === activeClientRide.id}
+                cancelError={clientCancelError}
+                onCancel={cancelClientRide}
+                onReturn={() => {
+                  setFocusedClientRideId(null)
+                  setHideClientRideProgress(true)
+                  setClientCancelError('')
+                }}
+              />
+            ) : <>
+            <div className="rider-dashboard-grid">
+              <section className="rider-booking-card">
+                <h1>Where are you headed?</h1>
+                <p className="rider-map-instruction">Tap the map to set your dropoff. Your current location is the pickup point.</p>
+                <div className="rider-map-frame">
+                  <LocationMap activeLocation={activeLocation} pickup={pickup} destination={destination} onSelect={selectLocation} />
+                  <p className="map-attribution">Map data &copy; OpenStreetMap contributors</p>
                 </div>
-                <button className="secondary-button location-button" type="button" onClick={useMyLocation} disabled={locating}>
-                  {locating ? 'Finding your location…' : 'Use my current location'}
-                </button>
                 {locationError && <p className="location-error" role="alert">{locationError}</p>}
-                <label className="field address-field">
-                  <span>Pickup address</span>
-                  <input value={pickupAddress} onFocus={() => setActiveLocation('pickup')} onChange={(event) => setPickupAddress(event.target.value)} maxLength={300} required placeholder="Street, landmark, or place" />
-                </label>
-                <label className="field address-field">
-                  <span>Destination address</span>
-                  <input value={destinationAddress} onFocus={() => setActiveLocation('destination')} onChange={(event) => setDestinationAddress(event.target.value)} maxLength={300} required placeholder="Street, landmark, or place" />
-                </label>
-                <div className="coordinate-list">
-                  <div className="coordinate-item">
-                    <span className="location-dot pickup-dot" />
-                    <span><strong>Pickup</strong><small>{formatCoordinates(pickup)}</small></span>
-                  </div>
-                  <div className="coordinate-item">
-                    <span className="location-dot destination-dot" />
-                    <span><strong>Destination</strong><small>{formatCoordinates(destination)}</small></span>
-                  </div>
+                <div className="rider-booking-fields">
+                  <label className="field">
+                    <span>Pickup <button className="rider-use-location" type="button" onClick={useMyLocation} disabled={locating}>{locating ? 'Locating…' : 'Use my location'}</button></span>
+                    <input value={pickupAddress} placeholder="Current location" onFocus={() => setActiveLocation('pickup')} onChange={(event) => setPickupAddress(event.target.value)} maxLength={300} required aria-label="Pickup address" />
+                    <small>{formatCoordinates(pickup)}</small>
+                  </label>
+                  <label className="field">
+                    <span>Dropoff</span>
+                    <input value={destinationAddress} onFocus={() => setActiveLocation('destination')} onChange={(event) => setDestinationAddress(event.target.value)} maxLength={300} required placeholder="Choose on map" />
+                    <small>{formatCoordinates(destination)}</small>
+                  </label>
                 </div>
                 {rideFeedback && <div className={`notice ${rideFeedbackType}`} role={rideFeedbackType === 'error' ? 'alert' : 'status'}>{rideFeedback}</div>}
                 <button className="primary-button create-ride-button" type="button" onClick={submitRideRequest} disabled={!pickup || !destination || !pickupAddress.trim() || !destinationAddress.trim() || rideBusy}>
-                  {rideBusy ? 'Sending request…' : 'Request a taxi'}
+                  {rideBusy ? 'Sending request…' : 'Request ride'}
                 </button>
-              </aside>
-              <div className="map-card">
-                <LocationMap activeLocation={activeLocation} pickup={pickup} destination={destination} onSelect={selectLocation} />
-                <p className="map-attribution">Map data &copy; OpenStreetMap contributors</p>
-              </div>
+              </section>
+              <ClientRideHistory rides={clientRides} loading={clientRidesLoading} error={clientRidesError} onRetryEstimate={retryRideEstimate} estimateBusyId={estimateBusyId} />
             </div>
-            <ClientRideHistory rides={clientRides} loading={clientRidesLoading} error={clientRidesError} onRetryEstimate={retryRideEstimate} estimateBusyId={estimateBusyId} />
-            <p className="map-note">The map shows the selected coordinates. Route distance and travel time are estimates; actual elapsed time is recorded between Start Trip and End Trip.</p>
+            </>}
           </section>
         ) : user.role === 'admin' ? (
           <AdminDashboard user={user} onLogout={handleLogout} />
@@ -780,26 +958,26 @@ function App() {
       ) : (
         <section className="auth-layout">
           <div className="welcome-copy">
-            <p className="eyebrow">WELCOME TO TAXITRACK</p>
+            <p className="eyebrow">{mode === 'register' ? 'JOIN THE MARKETPLACE' : 'WELCOME BACK'}</p>
             <h1>Manage your taxi rides.</h1>
-            <p className="intro">Sign in, or create a client account to get started.</p>
-            <div className="feature-list">
-              <div><span className="feature-check">✓</span><span>Password-protected accounts</span></div>
-              <div><span className="feature-check">✓</span><span>A dashboard for each role</span></div>
-            </div>
+            <p className="intro">{mode === 'register' ? 'Create an account to join the marketplace.' : 'Log in to your account.'}</p>
           </div>
 
           <div className="auth-card">
-            <div className="auth-tabs" role="tablist" aria-label="Sign in or create an account">
-              <button className={mode === 'login' ? 'auth-tab active' : 'auth-tab'} type="button" onClick={() => { setMode('login'); setNotice('') }}>Sign in</button>
-              <button className={mode === 'register' ? 'auth-tab active' : 'auth-tab'} type="button" onClick={() => { setMode('register'); setNotice('') }}>Create account</button>
-            </div>
             <div className="form-heading">
-              <h2>{mode === 'register' ? 'Create your account' : 'Welcome back'}</h2>
-              <p>{mode === 'register' ? 'New accounts are for clients.' : 'Sign in with your email and password.'}</p>
+              <h2>{mode === 'register' ? 'Create an account' : 'Log in'}</h2>
             </div>
             {notice && <div className={`notice ${noticeType}`} role="status">{notice}</div>}
             <form onSubmit={handleSubmit}>
+              {mode === 'register' && (
+                <fieldset className="field role-picker">
+                  <legend>I am a ...</legend>
+                  <div className="role-choice-list">
+                    <label><input type="radio" name="registrationRole" value="client" checked={registrationRole === 'client'} onChange={() => setRegistrationRole('client')} /> Rider</label>
+                    <label><input type="radio" name="registrationRole" value="driver" checked={registrationRole === 'driver'} onChange={() => setRegistrationRole('driver')} /> Driver</label>
+                  </div>
+                </fieldset>
+              )}
               {mode === 'register' && (
                 <label className="field">
                   <span>Full name</span>
@@ -815,11 +993,11 @@ function App() {
                 <input type="password" autoComplete={mode === 'register' ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} minLength={mode === 'register' ? 8 : undefined} maxLength={72} required placeholder={mode === 'register' ? 'At least 8 characters' : 'Enter your password'} />
               </label>
               <button className="primary-button" type="submit" disabled={busy}>
-                {busy ? 'Please wait…' : mode === 'register' ? 'Create your account' : 'Sign in'}
+                {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Log in'}
                 {!busy && <span aria-hidden="true">→</span>}
               </button>
             </form>
-            <p className="security-note"><span aria-hidden="true">⌑</span> Your sign-in details are sent securely.</p>
+            <p className="security-note">{mode === 'register' ? <>Already have an account? <button type="button" onClick={() => { setMode('login'); setNotice('') }}>Log in</button></> : <>New here? <button type="button" onClick={() => { setMode('register'); setNotice('') }}>Create an account</button></>}</p>
           </div>
         </section>
       )}

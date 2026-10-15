@@ -189,6 +189,31 @@ router.post('/', requireAuth, requireRole('client'), async (req, res) => {
   }
 });
 
+router.patch('/:id/cancel', requireAuth, requireRole('client'), async (req, res) => {
+  const rideId = req.params.id;
+  if (!validRideId(rideId)) return res.status(400).json({ message: 'Ride ID is invalid.' });
+
+  try {
+    const result = await pool.query(
+      `UPDATE rides SET status = 'cancelled', updated_at = NOW()
+       WHERE id = $1 AND client_id = $2 AND status IN ('pending', 'accepted')
+       RETURNING id, status, updated_at`,
+      [rideId, req.user.id],
+    );
+    if (!result.rows[0]) {
+      return res.status(409).json({ message: 'This ride can no longer be cancelled.' });
+    }
+    return res.json({ ride: {
+      id: String(result.rows[0].id),
+      status: result.rows[0].status,
+      updatedAt: result.rows[0].updated_at,
+    } });
+  } catch (error) {
+    console.error('Ride cancellation failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to cancel this ride right now.' });
+  }
+});
+
 router.post('/:id/estimate', requireAuth, requireRole('client'), async (req, res) => {
   const rideId = req.params.id;
   if (!validRideId(rideId)) return res.status(400).json({ message: 'Ride ID is invalid.' });

@@ -29,6 +29,46 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .primary-button:disabled { cursor: wait; opacity: .7; }
 .security-note { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 20px 0 0; color: #929b94; font-size: 11px; }
 .security-note span { font-size: 15px; }
+.page-shell.auth-page { width: 100%; padding-right: max(28px, calc((100vw - 1120px) / 2)); padding-left: max(28px, calc((100vw - 1120px) / 2)); background: linear-gradient(90deg, rgb(8 17 20 / 76%), rgb(8 17 20 / 48%)), url('https://images.unsplash.com/photo-1671459209539-913681993805?auto=format&fit=crop&w=2400&q=85') center / cover fixed; }
+.auth-page .topbar { border-color: rgb(255 255 255 / 18%); }
+.auth-page .brand, .auth-page .topbar-note, .auth-page .footer, .auth-page .footer span:first-child { color: rgb(255 255 255 / 78%); }
+.auth-page .welcome-copy h1 { color: #fff; }
+.auth-page .eyebrow { color: #ffb18c; }
+.auth-page .intro, .auth-page .feature-list { color: rgb(255 255 255 / 82%); }
+.auth-page .feature-check { background: rgb(255 255 255 / 17%); color: #fff; }
+.auth-page .auth-card { border-color: rgb(255 255 255 / 28%); background: rgb(10 17 19 / 48%); box-shadow: 0 24px 70px rgb(0 0 0 / 28%); backdrop-filter: blur(8px); }
+.auth-page .form-heading h2, .auth-page .field { color: #fff; }
+.auth-page .field input:not([type="radio"]) { border-color: rgb(255 255 255 / 42%); background: rgb(255 255 255 / 8%); color: #fff; }
+.auth-page .field input:not([type="radio"])::placeholder { color: rgb(255 255 255 / 62%); }
+.auth-page .field input:not([type="radio"]):focus { border-color: #ffad87; box-shadow: 0 0 0 3px rgb(255 173 135 / 18%); }
+.auth-page .security-note { color: rgb(255 255 255 / 74%); }
+.auth-page .security-note button { padding: 0; border: 0; background: none; color: #bb5432; font-weight: 700; }
+.auth-page .security-note button { color: #ffad87; }
+.auth-page .security-note button:hover { text-decoration: underline; }
+.role-picker { min-width: 0; margin: 0 0 17px; padding: 0; border: 0; }
+.role-picker legend { margin-bottom: 8px; }
+.role-choice-list { display: flex; gap: 10px; }
+.role-choice-list label { display: flex; flex: 1; align-items: center; gap: 8px; padding: 12px; border: 1px solid #dfe5dd; border-radius: 8px; background: #fff; }
+.auth-page .role-choice-list label { border-color: rgb(255 255 255 / 38%); background: rgb(255 255 255 / 8%); color: #fff; }
+.role-choice-list input { width: auto; height: auto; margin: 0; accent-color: #df7049; }
+.page-shell.app-page { width: 100%; padding-right: max(28px, calc((100vw - 1120px) / 2)); padding-left: max(28px, calc((100vw - 1120px) / 2)); background: linear-gradient(90deg, rgb(8 17 20 / 78%), rgb(8 17 20 / 56%)), url('https://images.unsplash.com/photo-1671459209539-913681993805?auto=format&fit=crop&w=2400&q=85') center / cover fixed; }
+.app-page .topbar, .app-page .footer { border-color: rgb(255 255 255 / 18%); }
+.app-page .brand, .app-page .topbar-note, .app-page .footer, .app-page .footer span:first-child { color: rgb(255 255 255 / 78%); }
+.app-page h1, .app-page h2, .app-page h3, .app-page h4 { color: #fff; }
+.app-page .welcome-copy .intro, .app-page .client-account-info span, .app-page .location-help, .app-page .request-section-heading p, .app-page .request-time, .app-page .request-coordinates span, .app-page .request-coordinates small, .app-page .filter-count, .app-page .empty-state, .app-page .assignment-controls small, .app-page .trip-saved-details p, .app-page .trip-summary-grid p, .app-page .trip-summary-grid small, .app-page .driver-map-heading span { color: rgb(255 255 255 / 70%); }
+.app-page .location-panel, .app-page .request-section, .app-page .client-account, .app-page .request-card, .app-page .trip-saved-details, .app-page .trip-summary, .app-page .driver-map-heading { border-color: rgb(255 255 255 / 22%); background: rgb(10 17 19 / 58%); color: #fff; box-shadow: 0 18px 44px rgb(0 0 0 / 18%); backdrop-filter: blur(7px); }
+.app-page .card-eyebrow { color: #ffad87; }
+.app-page .client-account-info strong, .app-page .coordinate-item strong, .app-page .request-coordinates strong, .app-page .trip-saved-details strong { color: #fff; }
+.app-page .secondary-button, .app-page .location-tab, .app-page .assignment-controls select, .app-page .ride-filters input, .app-page .ride-filters select { border-color: rgb(255 255 255 / 30%); background: rgb(255 255 255 / 9%); color: #fff; }
+.app-page .location-tab.active { border-color: rgb(255 173 135 / 65%); background: rgb(223 112 73 / 24%); color: #fff; }
+.app-page .location-tab .location-dot { border-color: #17201e; }
+.app-page .ride-filters { border-color: rgb(255 255 255 / 22%); background: rgb(255 255 255 / 7%); }
+.app-page .ride-filters label { color: rgb(255 255 255 / 82%); }
+.app-page .location-panel .coordinate-list, .app-page .request-coordinates { border-color: rgb(255 255 255 / 18%); }
+.app-page .trip-summary h4, .app-page .trip-summary-grid strong, .app-page .trip-summary-grid .trip-total strong { color: #fff; }
+.app-page .trip-summary-note { color: #ffd08b; }
+.app-page .driver-map-card { border-color: rgb(255 255 255 / 24%); background: rgb(10 17 19 / 58%); }
+.app-page .secondary-button:hover, .app-page .location-tab:hover { background: rgb(255 255 255 / 15%); }
 .notice { margin: -7px 0 16px; padding: 10px 12px; border-radius: 8px; font-size: 12px; line-height: 1.5; }
 .notice.error { background: #fff0ed; color: #a13e2e; }
 .notice.success { background: #edf7ef; color: #367448; }
@@ -58,6 +98,7 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
   .auth-layout, .welcome-layout { gap: 28px; padding: 36px 0; }
   .auth-card, .account-card { padding: 24px 20px; }
   .welcome-copy h1 { letter-spacing: -1.8px; }
+  .page-shell.auth-page { padding-right: 14px; padding-left: 14px; background-attachment: scroll; }
 }
 
 .client-dashboard { flex: 1; padding: 54px 0 46px; }
@@ -83,6 +124,25 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .destination-dot { background: #39845a; color: #39845a; }
 .location-button { min-height: 42px; margin-top: 12px; padding: 0 10px; font-size: 11px; }
 .location-error { margin: 10px 0 0; color: #a13e2e; font-size: 11px; line-height: 1.5; }
+.client-ride-progress { width: min(760px, 100%); margin: 10px auto 30px; padding: clamp(22px, 4vw, 36px); border: 1px solid rgb(255 255 255 / 23%); border-radius: 18px; background: rgb(10 17 19 / 70%); box-shadow: 0 24px 60px rgb(0 0 0 / 24%); color: #fff; backdrop-filter: blur(9px); }
+.client-ride-progress-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 20px; border-bottom: 1px solid rgb(255 255 255 / 16%); }
+.client-ride-progress-heading .card-eyebrow { margin-bottom: 8px; color: #ffad87; }
+.client-ride-progress-heading h2 { margin: 0; color: #fff; font-size: clamp(22px, 3vw, 30px); letter-spacing: -.6px; }
+.client-ride-progress-heading p:last-child { margin: 8px 0 0; color: rgb(255 255 255 / 72%); font-size: 13px; }
+.client-ride-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+.client-ride-facts > div { display: grid; gap: 7px; padding: 16px; border: 1px solid rgb(255 255 255 / 15%); border-radius: 11px; background: rgb(255 255 255 / 5%); }
+.client-ride-facts span, .client-ride-locations p > span { color: rgb(255 255 255 / 60%); font-size: 11px; }
+.client-ride-facts strong { color: #fff; font: 700 20px Manrope, sans-serif; }
+.client-ride-locations { display: grid; gap: 0; margin-top: 18px; border: 1px solid rgb(255 255 255 / 15%); border-radius: 11px; background: rgb(255 255 255 / 4%); }
+.client-ride-locations p { display: grid; gap: 5px; margin: 0; padding: 13px 15px; }
+.client-ride-locations p + p { border-top: 1px solid rgb(255 255 255 / 12%); }
+.client-ride-locations strong { color: #fff; font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.client-ride-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.client-ride-actions .primary-button { width: auto; min-width: 190px; margin: 0; padding: 0 18px; }
+.cancel-ride-button { min-height: 44px; padding: 0 17px; border: 1px solid rgb(255 126 126 / 54%); border-radius: 9px; background: rgb(184 50 50 / 14%); color: #ffaaaa; font-size: 12px; font-weight: 700; }
+.cancel-ride-button:hover:not(:disabled) { background: rgb(184 50 50 / 26%); }
+.cancel-ride-button:disabled { cursor: wait; opacity: .65; }
+.client-ride-updated { margin: 17px 0 0; color: rgb(255 255 255 / 48%); font-size: 10px; text-align: right; }
 .coordinate-list { display: grid; gap: 16px; margin-top: 24px; padding-top: 19px; border-top: 1px solid #edf0eb; }
 .coordinate-item { display: flex; align-items: flex-start; gap: 10px; }
 .coordinate-item .location-dot { margin-top: 3px; }
@@ -93,6 +153,89 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .location-map { width: 100%; height: 430px; background: #e8eee7; }
 .map-attribution { margin: 0; padding: 8px 12px; color: #778179; text-align: right; font-size: 10px; }
 .map-note { margin: 14px 2px 0; color: #929b94; font-size: 11px; line-height: 1.5; }
+.rider-page { width: 100% !important; padding: 0 max(28px, calc((100vw - 1120px) / 2)) !important; background: linear-gradient(90deg, rgb(8 17 20 / 78%), rgb(8 17 20 / 56%)), url('https://images.unsplash.com/photo-1671459209539-913681993805?auto=format&fit=crop&w=2400&q=85') center / cover fixed !important; }
+.rider-page .topbar { height: 64px; border-color: rgb(255 255 255 / 8%); }
+.rider-page .brand { gap: 9px; color: #f4f6fb; font-size: 17px; letter-spacing: -.3px; }
+.rider-page .brand-icon { width: 7px; height: 7px; border-radius: 50%; background: #efa51b; color: transparent; }
+.rider-topbar-tools { display: flex; align-items: center; gap: 13px; color: #eef1f8; }
+.rider-live { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid rgb(255 255 255 / 12%); border-radius: 18px; color: #cbd2e1; font-size: 10px; }
+.rider-live i { width: 6px; height: 6px; border-radius: 50%; background: #20c99a; box-shadow: 0 0 8px rgb(32 201 154 / 55%); }
+.rider-notification { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; background: rgb(255 255 255 / 7%); color: #f0ae2e; }
+.rider-notification svg { width: 14px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.rider-identity { display: grid; gap: 1px; text-align: right; }
+.rider-identity strong { font-size: 11px; font-weight: 650; }
+.rider-identity small { color: #929cb0; font-size: 9px; }
+.rider-logout { min-height: 30px; padding: 0 13px; border: 1px solid rgb(255 255 255 / 14%); border-radius: 18px; background: rgb(255 255 255 / 6%); color: #e6eaf2; font-size: 10px; font-weight: 600; }
+.rider-logout:hover { background: rgb(255 255 255 / 13%); }
+.rider-page .client-dashboard { padding: 25px 0 36px; }
+.rider-dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.48fr) minmax(290px, .94fr); gap: 20px; align-items: start; }
+.rider-booking-card, .rider-history-panel { min-width: 0; border: 1px solid rgb(255 255 255 / 9%); border-radius: 17px; background: linear-gradient(145deg, rgb(26 32 49 / 95%), rgb(20 25 39 / 96%)); box-shadow: 0 20px 50px rgb(0 0 0 / 22%); color: #f1f3f8; }
+.rider-booking-card { padding: 20px; }
+.rider-booking-card h1 { margin: 0; color: #f4f5f9; font: 700 18px Manrope, sans-serif; letter-spacing: -.25px; }
+.rider-map-instruction { margin: 7px 0 13px; color: #9ba5b9; font-size: 11px; line-height: 1.5; }
+.rider-map-frame { overflow: hidden; border-radius: 11px; background: #e8e8e5; }
+.rider-booking-card .location-map { height: 260px; }
+.rider-booking-card .map-attribution { padding: 4px 8px; background: #f4f4f1; color: #5b6573; font-size: 9px; }
+.rider-booking-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.rider-booking-fields .field { gap: 5px; margin: 0; color: #aab3c5; font-size: 10px; }
+.rider-booking-fields .field > span { display: flex; justify-content: space-between; align-items: center; }
+.rider-booking-fields input { height: 34px; padding: 0 10px; border-color: rgb(255 255 255 / 10%); border-radius: 8px; background: rgb(255 255 255 / 6%); color: #edf0f7; font-size: 10px; }
+.rider-booking-fields input::placeholder { color: #e2e5ec; opacity: 1; }
+.rider-booking-fields input:focus { border-color: #e5a12a; box-shadow: 0 0 0 2px rgb(229 161 42 / 16%); }
+.rider-booking-fields .field small { color: #69748b; font: 9px ui-monospace, monospace; }
+.rider-use-location { padding: 0; border: 0; background: transparent; color: #e9a229; font-size: 9px; font-weight: 600; }
+.rider-booking-card .create-ride-button { min-height: 38px; margin-top: 11px; border-radius: 20px; background: linear-gradient(90deg, #f5a51d, #e58a12); color: #21170a; font-size: 11px; box-shadow: 0 7px 20px rgb(230 143 17 / 22%); }
+.rider-booking-card .create-ride-button:hover:not(:disabled) { background: #ffb22d; }
+.rider-history-panel { max-height: 405px; padding: 17px 16px; }
+.rider-history-panel h2 { margin: 0 0 11px; color: #f3f4f8; font-size: 14px; }
+.rider-history-list { display: grid; max-height: 347px; gap: 7px; overflow-y: auto; padding-right: 3px; }
+.rider-history-card { padding: 9px 10px; border: 1px solid rgb(255 255 255 / 6%); border-radius: 11px; background: linear-gradient(110deg, rgb(255 255 255 / 6%), rgb(255 255 255 / 3%)); }
+.rider-history-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 7px; }
+.rider-history-top strong { display: -webkit-box; overflow: hidden; color: #e6e9f0; font-size: 10px; font-weight: 600; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.rider-history-top .status-badge { padding: 4px 8px; font-size: 8px; white-space: nowrap; }
+.rider-history-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 3px; color: #7e899f; font-size: 9px; }
+.rider-history-meta > span:last-child { color: #6e7a92; font: 9px ui-monospace, monospace; }
+.rider-history-details { margin-top: 7px; color: #b4bdd0; font-size: 10px; }
+.rider-history-details summary { cursor: pointer; color: #dba03b; }
+.rider-history-details p { color: #b4bdd0; }
+.rider-history-panel .empty-state { margin: 15px 0; font-size: 11px; }
+.rider-page .location-error { color: #ffaaa0; }
+.rider-page .notice { margin: 10px 0 0; }
+.rider-state-screen { width: min(520px, 100%); margin: clamp(35px, 9vh, 90px) auto; padding: clamp(28px, 6vw, 48px); border: 1px solid rgb(255 255 255 / 15%); border-radius: 20px; background: rgb(10 16 25 / 78%); box-shadow: 0 28px 80px rgb(0 0 0 / 38%); color: #fff; text-align: center; backdrop-filter: blur(12px); }
+.rider-state-icon { display: grid; width: 58px; height: 58px; margin: 0 auto 18px; place-items: center; border: 1px solid rgb(255 255 255 / 17%); border-radius: 50%; background: rgb(255 255 255 / 8%); color: #f2a31d; font-size: 34px; line-height: 1; }
+.is-cancelled .rider-state-icon { border-color: rgb(248 104 104 / 28%); background: rgb(248 104 104 / 12%); color: #ff8888; }
+.rider-state-eyebrow { margin: 0 0 8px; color: #f2ad37; font-size: 10px; font-weight: 800; letter-spacing: .18em; }
+.is-cancelled .rider-state-eyebrow { color: #ff9292; }
+.rider-state-screen h1 { margin: 0; color: #fff; font: 750 clamp(25px, 5vw, 34px) Manrope, sans-serif; letter-spacing: -.8px; }
+.rider-state-message { margin: 12px 0 0; color: rgb(255 255 255 / 82%); font-size: 15px; }
+.rider-state-location { margin: 23px 0; padding: 13px 15px; border: 1px solid rgb(255 255 255 / 12%); border-radius: 10px; background: rgb(255 255 255 / 5%); color: #c3cbd9; font-size: 12px; font-variant-numeric: tabular-nums; }
+.rider-state-screen .primary-button { width: auto; min-width: 190px; margin: 0 auto; padding: 0 22px; border-radius: 22px; background: linear-gradient(90deg, #f5a51d, #e58a12); color: #21170a; }
+.cancel-confirmation { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 15px; padding: 16px; border: 1px solid rgb(255 140 140 / 25%); border-radius: 12px; background: rgb(120 35 42 / 17%); }
+.cancel-confirmation h3 { margin: 0; color: #fff; font-size: 13px; }
+.cancel-confirmation p { margin: 5px 0 0; color: rgb(255 255 255 / 65%); font-size: 11px; }
+.cancel-confirm-actions { display: flex; flex: 0 0 auto; gap: 8px; }
+.keep-ride-button, .confirm-cancel-button { min-height: 36px; padding: 0 12px; border: 1px solid rgb(255 255 255 / 20%); border-radius: 8px; background: rgb(255 255 255 / 8%); color: #fff; font-size: 10px; font-weight: 700; }
+.confirm-cancel-button { border-color: rgb(255 126 126 / 45%); background: #9f3538; }
+.keep-ride-button:hover { background: rgb(255 255 255 / 14%); }
+.confirm-cancel-button:hover:not(:disabled) { background: #b64043; }
+@media (max-width: 850px) {
+  .rider-dashboard-grid { grid-template-columns: 1fr; }
+  .rider-history-panel { max-height: none; }
+  .rider-history-list { max-height: 380px; }
+}
+@media (max-width: 560px) {
+  .rider-page { padding: 0 14px !important; }
+  .rider-topbar-tools { gap: 7px; }
+  .rider-live { padding: 5px 7px; }
+  .rider-notification { display: none; }
+  .rider-identity strong { max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rider-booking-card { padding: 15px; }
+  .rider-booking-card .location-map { height: 225px; }
+  .rider-booking-fields { gap: 7px; }
+  .cancel-confirmation { align-items: stretch; flex-direction: column; }
+  .cancel-confirm-actions { flex-direction: column-reverse; }
+  .cancel-confirm-actions button { width: 100%; }
+}
 @media (max-width: 850px) {
   .client-dashboard { padding: 42px 0; }
   .client-dashboard-heading { align-items: flex-start; flex-direction: column; }
@@ -100,6 +243,7 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
   .location-panel { order: 2; }
   .map-card { order: 1; }
   .location-map { height: 380px; }
+  .client-ride-progress { margin-top: 0; }
 }
 @media (max-width: 480px) {
   .client-dashboard { padding: 34px 0; }
@@ -107,6 +251,11 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
   .client-account-info { flex: 1; min-width: 0; }
   .location-map { height: 320px; }
   .location-panel { padding: 21px 18px; }
+  .client-ride-facts { grid-template-columns: 1fr; }
+  .client-ride-progress-heading { flex-direction: column; }
+  .client-ride-actions { flex-direction: column-reverse; }
+  .client-ride-actions .primary-button { width: 100%; }
+  .cancel-ride-button { width: 100%; }
 }
 .create-ride-button { margin-top: 20px; }
 .role-dashboard { flex: 1; padding: 54px 0 46px; }
@@ -136,12 +285,72 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .request-coordinates span { color: #7b867f; font-size: 11px; font-variant-numeric: tabular-nums; }
 .request-coordinates small { color: #929b94; font-size: 10px; font-variant-numeric: tabular-nums; }
 .retry-estimate-button { margin-top: 14px; }
+.ride-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; align-items: end; gap: 10px; padding: 15px; border: 1px solid #e8ece6; border-radius: 10px; background: #fafbf9; }
+.ride-filters label { display: grid; min-width: 0; gap: 6px; color: #56635a; font-size: 11px; font-weight: 600; }
+.ride-filters input, .ride-filters select { width: 100%; min-width: 0; height: 40px; padding: 0 9px; border: 1px solid #dfe5dd; border-radius: 7px; background: #fff; color: #414e46; font: inherit; font-size: 12px; }
+.ride-filters .clear-filters-button { width: auto; min-height: 40px; margin: 0; padding: 0 12px; font-size: 11px; white-space: nowrap; }
+.filter-count { margin: 10px 2px 14px; color: #879189; font-size: 11px; }
 .assignment-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; margin-top: 17px; }
 .assignment-controls select { min-width: 0; height: 42px; padding: 0 10px; border: 1px solid #dfe5dd; border-radius: 8px; background: #fff; color: #414e46; font: inherit; font-size: 12px; }
 .assignment-controls .primary-button { width: auto; min-height: 42px; margin: 0; padding: 0 16px; font-size: 11px; }
 .assignment-controls small { grid-column: 1 / -1; color: #929b94; font-size: 11px; }
 .assigned-driver { margin: 17px 0 0; color: #497651; font-size: 12px; font-weight: 600; }
 .empty-state { margin: 0; padding: 24px 12px; color: #7b867f; text-align: center; font-size: 13px; }
+.admin-dashboard .request-section { border-color: rgb(255 255 255 / 24%); background: rgb(10 17 19 / 68%); box-shadow: 0 24px 60px rgb(0 0 0 / 22%); backdrop-filter: blur(8px); }
+.admin-dashboard .request-section-heading { padding-bottom: 17px; border-bottom: 1px solid rgb(255 255 255 / 17%); }
+.admin-dashboard .request-section-heading h2 { color: #fff; letter-spacing: -.3px; }
+.admin-dashboard .request-section-heading p { color: rgb(255 255 255 / 62%); }
+.admin-dashboard .ride-filters { border-color: rgb(255 255 255 / 16%); border-radius: 10px; background: rgb(255 255 255 / 5%); }
+.admin-dashboard .filter-count { color: rgb(255 255 255 / 58%); }
+.admin-dashboard .request-list { gap: 0; overflow: hidden; border-top: 1px solid rgb(255 255 255 / 18%); border-radius: 10px; }
+.admin-dashboard .request-card { display: grid; grid-template-columns: minmax(145px, .85fr) minmax(220px, 1.55fr) minmax(180px, 1fr); align-items: center; gap: 14px; padding: 17px 16px; border: 0; border-bottom: 1px solid rgb(255 255 255 / 13%); border-radius: 0; background: rgb(255 255 255 / 3%); transition: background .15s ease; }
+.admin-dashboard .request-card:hover { background: rgb(255 255 255 / 7%); }
+.admin-dashboard .request-card-top { display: contents; }
+.admin-dashboard .request-card-top > div { grid-column: 1; }
+.admin-dashboard .request-card h3 { color: #fff; font-size: 14px; }
+.admin-dashboard .request-card .card-eyebrow { color: #ffad87; }
+.admin-dashboard .request-time { color: rgb(255 255 255 / 58%); }
+.admin-dashboard .request-card .status-badge { grid-column: 3; grid-row: 1; justify-self: start; }
+.admin-dashboard .request-coordinates { grid-column: 2; grid-row: 1; grid-template-columns: 1fr; gap: 9px; margin: 0; padding: 0; border: 0; }
+.admin-dashboard .request-coordinates strong { color: rgb(255 255 255 / 58%); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
+.admin-dashboard .request-coordinates span { color: #edf1f3; }
+.admin-dashboard .request-coordinates small { color: rgb(255 255 255 / 48%); }
+.admin-dashboard .assignment-controls, .admin-dashboard .assigned-driver { grid-column: 3; grid-row: 2; margin: 0; }
+.admin-dashboard .assigned-driver { color: #86dfc0; }
+.admin-dashboard .trip-summary { grid-column: 1 / -1; }
+.admin-dashboard .request-list > .empty-state { background: rgb(255 255 255 / 3%); }
+.admin-group-heading { display: flex; align-items: center; gap: 9px; margin: 22px 0 10px; }
+.admin-group-heading h3 { margin: 0; color: #fff; font-size: 13px; font-weight: 700; }
+.admin-group-heading span { display: inline-grid; min-width: 22px; height: 22px; place-items: center; padding: 0 6px; border: 1px solid rgb(255 255 255 / 18%); border-radius: 12px; background: rgb(255 255 255 / 7%); color: rgb(255 255 255 / 72%); font-size: 10px; }
+.admin-request-group + .admin-request-group { margin-top: 25px; padding-top: 5px; border-top: 1px solid rgb(255 255 255 / 14%); }
+.admin-dashboard .request-coordinates { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.admin-dashboard .request-coordinates p { grid-template-columns: 1fr; gap: 3px; min-width: 0; }
+.admin-dashboard .request-coordinates span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-dashboard .assignment-controls select { color-scheme: dark; border-color: rgb(255 255 255 / 30%); background: #111a1c; color: #fff; }
+.admin-dashboard .assignment-controls select option { background: #111a1c; color: #fff; }
+.admin-dashboard .past-requests .request-list { border-color: rgb(255 255 255 / 11%); }
+.admin-dashboard .past-requests .request-card { gap: 10px; padding-top: 11px; padding-bottom: 11px; background: rgb(255 255 255 / 2%); }
+.admin-dashboard .past-requests .request-card:hover { background: rgb(255 255 255 / 5%); }
+.admin-dashboard .past-requests .request-coordinates { gap: 8px; }
+.admin-dashboard .past-requests .request-coordinates small { display: none; }
+.admin-dashboard .past-requests .request-card h3 { font-size: 13px; }
+.admin-dashboard .past-requests .request-time { margin-top: 3px; font-size: 10px; }
+.admin-dashboard .past-requests .trip-summary { padding: 10px; }
+.admin-dashboard .past-request-details { grid-column: 1 / -1; color: rgb(255 255 255 / 78%); font-size: 11px; }
+.admin-dashboard .past-request-details summary { width: fit-content; color: #ffad87; cursor: pointer; font-weight: 600; }
+.admin-dashboard .ride-filters select { color-scheme: dark; background: #111a1c; color: #fff; }
+.admin-dashboard .ride-filters select option { background: #111a1c; color: #fff; }
+@media (max-width: 850px) {
+  .admin-dashboard .request-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .admin-dashboard .request-card-top { display: flex; grid-column: 1 / -1; }
+  .admin-dashboard .request-card-top > div, .admin-dashboard .request-card .status-badge { grid-column: auto; grid-row: auto; }
+  .admin-dashboard .request-coordinates { grid-column: 1 / -1; grid-row: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-dashboard .assignment-controls, .admin-dashboard .assigned-driver { grid-column: 1 / -1; grid-row: auto; }
+}
+@media (max-width: 520px) {
+  .admin-dashboard .request-card { grid-template-columns: 1fr; gap: 12px; }
+  .admin-dashboard .request-coordinates { grid-template-columns: 1fr; }
+}
 @media (max-width: 850px) {
   .role-dashboard { padding: 42px 0; }
   .role-dashboard-heading { align-items: flex-start; flex-direction: column; }
@@ -154,6 +363,8 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
   .assignment-controls { grid-template-columns: 1fr; }
   .assignment-controls .primary-button { width: 100%; }
 }
+@media (max-width: 850px) { .ride-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .ride-filters { grid-template-columns: 1fr; } }
 .trip-actions { display: flex; justify-content: flex-end; margin-top: 17px; }
 .trip-actions .primary-button { width: auto; min-height: 42px; margin: 0; padding: 0 18px; font-size: 12px; }
 .trip-saved-details { display: grid; gap: 6px; margin-top: 15px; padding: 12px; border-radius: 8px; background: #f6f8f5; }

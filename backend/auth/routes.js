@@ -52,6 +52,7 @@ router.post('/register', async (req, res) => {
   const fullName = typeof req.body?.fullName === 'string' ? req.body.fullName.trim() : '';
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  const role = typeof req.body?.role === 'string' ? req.body.role.toLowerCase() : '';
 
   if (fullName.length < 2 || fullName.length > 160) {
     return res.status(400).json({ message: 'Name must be between 2 and 160 characters.' });
@@ -62,14 +63,17 @@ router.post('/register', async (req, res) => {
   if (password.length < 8 || Buffer.byteLength(password, 'utf8') > 72) {
     return res.status(400).json({ message: 'Password must be at least 8 characters and no more than 72 bytes.' });
   }
+  if (!['client', 'driver'].includes(role)) {
+    return res.status(400).json({ message: 'Choose Rider or Driver.' });
+  }
 
   try {
     const passwordHash = await bcrypt.hash(password, 12);
     const result = await pool.query(
       `INSERT INTO users (full_name, email, password_hash, role)
-       VALUES ($1, $2, $3, 'client')
+       VALUES ($1, $2, $3, $4)
        RETURNING id, full_name, email, role, created_at`,
-      [fullName, email, passwordHash],
+      [fullName, email, passwordHash, role],
     );
     const user = publicUser(result.rows[0]);
     setSessionCookie(res, user);
