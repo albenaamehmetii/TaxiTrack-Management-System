@@ -94,6 +94,7 @@ async function createTestApi(
   driverId = '700',
   assignedDriverId = '700',
   userRole = 'driver',
+  clientRideRows = [],
 ) {
   let rideIsInProgress = true;
   let rideIsAccepted = true;
@@ -101,6 +102,7 @@ async function createTestApi(
   let creationValues = null;
   let estimateRetryValues = null;
   let historyClientId = null;
+  let historySql = null;
   const locations = [...initialLocations];
   let transactionStartLength = locations.length;
   pool.query = async (sql, queryValues = []) => {
@@ -138,7 +140,8 @@ async function createTestApi(
     }
     if (sql.includes('FROM rides r') && sql.includes('WHERE r.client_id = $1')) {
       historyClientId = queryValues[0];
-      return { rows: [] };
+      historySql = sql;
+      return { rows: clientRideRows.filter((row) => String(row.client_id) === String(queryValues[0])) };
     }
     throw new Error('Unexpected pool query in GPS test');
   };
@@ -153,11 +156,11 @@ async function createTestApi(
           : { rows: [] };
       }
       if (sql.includes("UPDATE rides SET status = 'in_progress'")) {
-        if (!rideIsAccepted || values[2] !== '41' || values[3] !== assignedDriverId) return { rows: [] };
+        if (!rideIsAccepted || values[0] !== '41' || values[1] !== assignedDriverId) return { rows: [] };
         rideIsAccepted = false;
         rideIsInProgress = true;
         return { rows: [{
-          id: '41', status: 'in_progress', start_latitude: values[0], start_longitude: values[1],
+          id: '41', status: 'in_progress', start_latitude: null, start_longitude: null,
           started_at: startedAt, updated_at: new Date(),
         }] };
       }
@@ -217,12 +220,13 @@ async function createTestApi(
     get creationValues() { return creationValues; },
     get estimateRetryValues() { return estimateRetryValues; },
     get historyClientId() { return historyClientId; },
+    get historySql() { return historySql; },
     get locationCount() { return locations.length; },
     get lastLocation() { return locations.at(-1); },
   };
 }
 
-test('End Trip preserves the OSRM estimate, stores actual elapsed duration without GPS, and blocks duplicates', async () => {
+test('End Trip preserves the OSRM estimate and actual elapsed duration without requiring device GPS', async () => {
   const api = await createTestApi();
   const response = await realFetch(`${api.origin}/api/rides/41/end`, {
     method: 'PATCH', headers: api.headers,
@@ -241,6 +245,7 @@ test('End Trip preserves the OSRM estimate, stores actual elapsed duration witho
   assert.equal(body.ride.price, 11.38);
   assert.equal(api.savedValues[0], '41');
   assert.equal(api.savedValues[1], '700');
+  assert.equal(body.ride.end, null);
   assert.equal(api.locationCount, 2);
 
   const duplicate = await realFetch(`${api.origin}/api/rides/41/end`, {
@@ -335,7 +340,32 @@ test('Client ride history query is scoped to the authenticated client', async ()
   assert.equal(api.historyClientId, '733');
 });
 
-test('End Trip ignores absent or inaccurate GPS positions instead of waiting for tracking', async () => {
+test('client ride history returns only the assigned driver phone for that client ride', async () => {
+  const ownRide = {
+    id: '51', client_id: '733', driver_id: '800', client_name: 'Rider', driver_name: 'Assigned Driver',
+    driver_phone: '+383 44 123 456', pickup_address: 'Pickup', pickup_latitude: 42.66, pickup_longitude: 21.16,
+    destination_address: 'Destination', destination_latitude: 42.67, destination_longitude: 21.18,
+    status: 'accepted', requested_at: new Date(), started_at: null, ended_at: null,
+    distance_km: null, distance_source: null, duration_minutes: null,
+    estimated_distance_km: 4, estimated_duration_minutes: 12, base_price: 2, price_per_km: 0.75,
+    price: 5, updated_at: new Date(), start_latitude: null, start_longitude: null,
+    end_latitude: null, end_longitude: null,
+  };
+  const otherClientRide = { ...ownRide, id: '52', client_id: '734', driver_id: '801', driver_phone: '+383 44 987 654' };
+  const rideWithoutDriverPhone = { ...ownRide, id: '53', driver_id: '802', driver_name: 'Legacy Driver', driver_phone: null };
+  const api = await createTestApi([], 20, false, undefined, '733', '733', 'client', [ownRide, otherClientRide, rideWithoutDriverPhone]);
+  const response = await realFetch(`${api.origin}/api/rides`, { headers: api.headers });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.match(api.historySql, /LEFT JOIN driver_applications/);
+  assert.match(api.historySql, /WHERE r\.client_id = \$1/);
+  assert.deepEqual(body.rides.map((ride) => ride.id), ['51', '53']);
+  assert.equal(body.rides[0].driverPhone, '+383 44 123 456');
+  assert.equal(body.rides[0].driverId, '800');
+  assert.equal(body.rides[1].driverPhone, null);
+});
+
+test('End Trip works without a GPS fix and keeps device coordinates empty', async () => {
   const api = await createTestApi([]);
   const response = await realFetch(`${api.origin}/api/rides/41/end`, {
     method: 'PATCH', headers: api.headers,
@@ -344,10 +374,7 @@ test('End Trip ignores absent or inaccurate GPS positions instead of waiting for
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.ride.status, 'completed');
-  assert.equal(body.ride.estimatedDistanceKm, 12.5);
-  assert.equal(body.ride.estimatedFare, 11.38);
   assert.equal(body.ride.end, null);
-  assert.equal(body.ride.actualElapsedDurationMinutes, 4);
   assert.equal(api.locationCount, 0);
 });
 
@@ -355,7 +382,7 @@ test('End Trip still requires the authenticated driver to own the active ride', 
   const api = await createTestApi(undefined, 20, false, undefined, '999', '700');
   const response = await realFetch(`${api.origin}/api/rides/41/end`, {
     method: 'PATCH', headers: api.headers,
-    body: JSON.stringify({ latitude: 42.66, longitude: 21.162, accuracyM: 120 }),
+    body: JSON.stringify({ latitude: 42.66, longitude: 21.162, accuracyM: 5 }),
   });
   const body = await response.json();
   assert.equal(response.status, 409);
@@ -364,7 +391,7 @@ test('End Trip still requires the authenticated driver to own the active ride', 
   assert.equal(api.locationCount, 2);
 });
 
-test('Start Trip saves the timestamp and status without a GPS position', async () => {
+test('Start Trip saves timestamp and status without requiring device GPS', async () => {
   const api = await createTestApi([]);
   const response = await realFetch(`${api.origin}/api/rides/41/start`, {
     method: 'PATCH', headers: api.headers, body: JSON.stringify({}),

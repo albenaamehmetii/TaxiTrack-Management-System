@@ -134,6 +134,11 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .client-ride-facts > div { display: grid; gap: 7px; padding: 16px; border: 1px solid rgb(255 255 255 / 15%); border-radius: 11px; background: rgb(255 255 255 / 5%); }
 .client-ride-facts span, .client-ride-locations p > span { color: rgb(255 255 255 / 60%); font-size: 11px; }
 .client-ride-facts strong { color: #fff; font: 700 20px Manrope, sans-serif; }
+.client-driver-contact { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 13px 15px; border: 1px solid rgb(255 255 255 / 15%); border-radius: 11px; background: rgb(255 255 255 / 5%); }
+.client-driver-contact > svg { flex: 0 0 20px; width: 20px; fill: none; stroke: #ffbd4a; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.client-driver-contact > div { display: grid; flex: 1; gap: 4px; min-width: 0; }
+.client-driver-contact > div span { color: rgb(255 255 255 / 60%); font-size: 11px; }
+.client-driver-contact > div strong { color: #fff; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .client-ride-locations { display: grid; gap: 0; margin-top: 18px; border: 1px solid rgb(255 255 255 / 15%); border-radius: 11px; background: rgb(255 255 255 / 4%); }
 .client-ride-locations p { display: grid; gap: 5px; margin: 0; padding: 13px 15px; }
 .client-ride-locations p + p { border-top: 1px solid rgb(255 255 255 / 12%); }

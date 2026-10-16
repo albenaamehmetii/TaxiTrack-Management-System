@@ -245,7 +245,8 @@ router.get('/', requireAuth, requireRole('client'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT r.id, r.client_id, r.driver_id, c.full_name AS client_name,
-        d.full_name AS driver_name, r.pickup_address, r.pickup_latitude, r.pickup_longitude,
+        d.full_name AS driver_name, driver_application.phone AS driver_phone,
+        r.pickup_address, r.pickup_latitude, r.pickup_longitude,
         r.destination_address, r.destination_latitude, r.destination_longitude,
         r.start_latitude, r.start_longitude, r.end_latitude, r.end_longitude,
         r.status, r.requested_at, r.started_at, r.ended_at,
@@ -257,6 +258,7 @@ router.get('/', requireAuth, requireRole('client'), async (req, res) => {
        FROM rides r
        JOIN users c ON c.id = r.client_id
        LEFT JOIN users d ON d.id = r.driver_id
+       LEFT JOIN driver_applications driver_application ON driver_application.driver_id = r.driver_id
        LEFT JOIN driver_presence dp ON dp.driver_id = r.driver_id
        LEFT JOIN ride_ratings rr ON rr.ride_id = r.id
        WHERE r.client_id = $1
@@ -266,6 +268,7 @@ router.get('/', requireAuth, requireRole('client'), async (req, res) => {
     const freeDriverCount = await getFreeDriverCount();
     return res.json({ rides: result.rows.map((row) => ({
       ...publicRide(row),
+      driverPhone: row.driver_id == null ? null : row.driver_phone || null,
       rating: row.rating_stars == null ? null : {
         stars: Number(row.rating_stars), comment: row.rating_comment || '', createdAt: row.rating_created_at,
       },
@@ -636,22 +639,16 @@ router.patch('/:id/accept', requireAuth, requireRole('driver'), async (req, res)
 
 router.patch('/:id/start', requireAuth, requireRole('driver'), async (req, res) => {
   const rideId = req.params.id;
-  const point = gpsPointBody(req.body);
   if (!validRideId(rideId)) return res.status(400).json({ message: 'Ride ID is invalid.' });
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const result = await client.query(
-      `UPDATE rides SET status = 'in_progress', start_latitude = $1,
-        start_longitude = $2, started_at = NOW(), updated_at = NOW()
-       WHERE id = $3 AND driver_id = $4 AND status = 'accepted' AND started_at IS NULL
+      `UPDATE rides SET status = 'in_progress', started_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND driver_id = $2 AND status = 'accepted' AND started_at IS NULL
        RETURNING id, status, start_latitude, start_longitude, started_at, updated_at`,
-      [
-        point && point.accuracyM <= 50 ? point.latitude : null,
-        point && point.accuracyM <= 50 ? point.longitude : null,
-        rideId, req.user.id,
-      ],
+      [rideId, req.user.id],
     );
     if (!result.rows[0]) {
       await client.query('ROLLBACK');

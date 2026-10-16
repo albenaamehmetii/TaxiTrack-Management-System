@@ -820,13 +820,7 @@ function DriverDashboard({ user, onLogout }) {
                   <p><strong>Destination</strong><span>Map point ({formatCoordinates(ride.destination)})</span></p>
                 </div>
                 <p className="assigned-driver">Assigned to you</p>
-                {ride.status === 'completed' && <details className="past-request-details"><summary>More trip details</summary>
-                  {(ride.start || ride.end) && <div className="trip-saved-details">
-                    {ride.start && <p><strong>Started:</strong> {formatRideTime(ride.startedAt)} · {ride.start.latitude.toFixed(5)}, {ride.start.longitude.toFixed(5)}</p>}
-                    {ride.end && <p><strong>Ended:</strong> {formatRideTime(ride.endedAt)} · {ride.end.latitude.toFixed(5)}, {ride.end.longitude.toFixed(5)}</p>}
-                  </div>}
-                  <TripSummary ride={ride} />
-                </details>}
+          {ride.status === 'completed' && <details className="past-request-details"><summary>More trip details</summary><TripSummary ride={ride} /></details>}
                 {!['completed', 'cancelled'].includes(ride.status) && <div className="driver-map-card">
                   <div className="driver-map-heading"><strong>{ride.status === 'in_progress' ? 'Trip in progress' : 'Pickup and destination'}</strong><span>{routeRide?.id === ride.id && routeLoading ? 'Loading suggested route…' : 'No GPS tracking required'}</span></div>
                   <LocationMap activeLocation="driver" pickup={ride.pickup} destination={ride.destination} suggestedRoute={routeRide?.id === ride.id ? suggestedRoute : []} />
@@ -884,14 +878,13 @@ function ClientRideHistory({ rides, loading, error, onRetryEstimate, estimateBus
   )
 }
 
-function ClientRatingsPage({ rides, locallySkippedRatingIds, busyRideId, error, notice, onSubmit, onSkip }) {
+function ClientRatingsPage({ rides, locallySkippedRatingIds, busyRideId, error, onSubmit, onSkip }) {
   const completedRides = rides.filter((ride) => ride.status === 'completed' && ride.driverId)
   return (
     <div className="client-ratings-page">
       <div className="client-dashboard-heading">
         <div className="welcome-copy"><p className="eyebrow">YOUR RIDES</p><h1>Ratings</h1><p className="intro">Share feedback about your completed rides.</p></div>
       </div>
-      {notice && <div className="notice success" role="status">{notice}</div>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {completedRides.length === 0 ? <p className="empty-state">Completed rides will appear here.</p> : (
         <div className="client-rating-list">
@@ -902,7 +895,7 @@ function ClientRatingsPage({ rides, locallySkippedRatingIds, busyRideId, error, 
   )
 }
 
-function RideRatingPrompt({ ride, busy, error, notice, onSubmit, onSkip }) {
+function RideRatingPrompt({ ride, busy, error, onSubmit, onSkip }) {
   return (
     <div className="modal-backdrop rating-modal-backdrop" role="presentation">
       <section className="action-modal rating-modal" role="dialog" aria-modal="true" aria-labelledby="ride-rating-prompt-title">
@@ -911,7 +904,6 @@ function RideRatingPrompt({ ride, busy, error, notice, onSubmit, onSkip }) {
         <p>Your trip has ended. Submit a rating or choose Skip.</p>
         <ClientRideRatingCard ride={ride} busy={busy} onSubmit={onSubmit} onSkip={onSkip} />
         {error && <div className="notice error" role="alert">{error}</div>}
-        {notice && <div className="notice success" role="status">{notice}</div>}
       </section>
     </div>
   )
@@ -965,6 +957,7 @@ function ClientRideProgress({ ride, cancelling, cancelError, freeDriverCount, on
   const isAccepted = ride.status === 'accepted'
   const driverLatitude = ride.driverLocation?.latitude
   const driverLongitude = ride.driverLocation?.longitude
+  const driverPhoneDigits = typeof ride.driverPhone === 'string' ? ride.driverPhone.replace(/\D/g, '') : ''
   const canCancel = ['pending', 'accepted'].includes(ride.status)
 
   useEffect(() => {
@@ -1002,6 +995,10 @@ function ClientRideProgress({ ride, cancelling, cancelError, freeDriverCount, on
         <div><span>Estimated price</span><strong>{ride.estimatedFare == null ? 'Unavailable' : `€${Number(ride.estimatedFare).toFixed(2)}`}</strong></div>
         <div><span>{isAccepted ? 'Driver ETA' : 'Estimated time'}</span><strong>{isAccepted ? (approachEstimate?.rideId === ride.id && approachEstimate.minutes != null ? `${approachEstimate.minutes} min` : !ride.driverLocation || (approachEstimate?.rideId === ride.id && approachEstimate.unavailable) ? 'Unavailable' : 'Calculating…') : ride.estimatedDurationMinutes == null ? 'Unavailable' : `${ride.estimatedDurationMinutes} min`}</strong></div>
       </div>
+      {ride.driverId && <div className="client-driver-contact">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h3l1.5 4-2 1.5a14 14 0 0 0 6 6l1.5-2 4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 5 5.2 2 2 0 0 1 7 3Z" /></svg>
+        <div><span>Contact Info</span><strong>{driverPhoneDigits.length >= 7 ? ride.driverPhone : 'Contact information unavailable'}</strong></div>
+      </div>}
       {isAccepted && <div className="driver-approach-map"><LocationMap activeLocation="driver" pickup={ride.pickup} destination={null} driverLocation={ride.driverLocation} /><p>{ride.driverLocation ? `Driver location: ${formatCoordinates(ride.driverLocation)}` : 'Driver location is unavailable.'} · ETA is calculated from the road route when available.</p></div>}
       <div className="client-ride-locations">
         <p><span>Pickup</span><strong>{ride.pickup.address || `Map point (${formatCoordinates(ride.pickup)})`}</strong></p>
@@ -1063,7 +1060,6 @@ function App() {
   const [estimateBusyId, setEstimateBusyId] = useState(null)
   const [ratingBusyRideId, setRatingBusyRideId] = useState(null)
   const [ratingError, setRatingError] = useState('')
-  const [ratingNotice, setRatingNotice] = useState('')
   const [locallySkippedRatingIds, setLocallySkippedRatingIds] = useState(() => new Set())
   const [ratingPromptDismissed, setRatingPromptDismissed] = useState(false)
   const knownCompletedRideIdsRef = useRef(null)
@@ -1167,7 +1163,6 @@ function App() {
     if (ratingBusyRideId !== null || !Number.isInteger(stars) || stars < 1 || stars > 5) return
     setRatingBusyRideId(ride.id)
     setRatingError('')
-    setRatingNotice('')
     try {
       const response = await fetch(`${API_URL}/api/rides/${ride.id}/rating`, {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
@@ -1176,7 +1171,6 @@ function App() {
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Unable to submit this rating.')
       setClientRides((current) => current.map((item) => item.id === ride.id ? { ...item, rating: data.rating } : item))
-      setRatingNotice(`Rating for ride #${ride.id} submitted successfully.`)
       setRatingPromptDismissed(true)
     } catch (error) {
       setRatingError(error.message || 'Unable to submit this rating.')
@@ -1188,9 +1182,7 @@ function App() {
   async function skipRideRating(ride) {
     if (ratingBusyRideId !== null) return
     setRatingError('')
-    setRatingNotice('')
     setLocallySkippedRatingIds((current) => new Set(current).add(ride.id))
-    setRatingNotice(`Rating for ride #${ride.id} skipped for this visit.`)
     setRatingPromptDismissed(true)
   }
 
@@ -1242,6 +1234,13 @@ function App() {
       setNotice('')
       setNoticeType('error')
     }
+  }
+
+  function handleBrandClick(event) {
+    if (user?.role !== 'client') return
+    event.preventDefault()
+    setClientPage('dashboard')
+    setRatingPromptDismissed(true)
   }
 
   function selectLocation(kind, location) {
@@ -1343,9 +1342,9 @@ function App() {
   return (
     <main className={`page-shell ${user ? 'app-page' : 'auth-page'}${user?.role === 'client' ? ' rider-page' : ''}`}>
       <header className="topbar">
-        <a className="brand" href="/" aria-label="TaxiTrack home">
+        <a className="brand" href="/" aria-label="TaxiTrack home" onClick={handleBrandClick}>
           <span className="brand-icon" aria-hidden="true">T</span>
-          <span>{user?.role === 'client' ? 'Ride Bidding' : 'TaxiTrack'}</span>
+          <span>TaxiTrack</span>
         </a>
         {user?.role === 'client' ? (
           <div className="rider-topbar-tools">
@@ -1364,8 +1363,7 @@ function App() {
       {user ? (
         user.role === 'client' ? (
           <section className="client-dashboard">
-            {clientPage === 'ratings' ? <ClientRatingsPage rides={clientRides} locallySkippedRatingIds={locallySkippedRatingIds} busyRideId={ratingBusyRideId} error={ratingError} notice={ratingNotice} onSubmit={submitRideRating} onSkip={skipRideRating} /> : <>
-            {ratingNotice && !pendingRatingRide && <div className="notice success" role="status">{ratingNotice}</div>}
+            {clientPage === 'ratings' ? <ClientRatingsPage rides={clientRides} locallySkippedRatingIds={locallySkippedRatingIds} busyRideId={ratingBusyRideId} error={ratingError} onSubmit={submitRideRating} onSkip={skipRideRating} /> : <>
             {activeClientRide ? (
               <ClientRideProgress
                 ride={activeClientRide}
@@ -1468,7 +1466,7 @@ function App() {
           </div>
         </section>
       )}
-      {user?.role === 'client' && pendingRatingRide && <RideRatingPrompt key={pendingRatingRide.id} ride={pendingRatingRide} busy={ratingBusyRideId === pendingRatingRide.id} error={ratingError} notice={ratingNotice} onSubmit={submitRideRating} onSkip={skipRideRating} />}
+      {user?.role === 'client' && pendingRatingRide && <RideRatingPrompt key={pendingRatingRide.id} ride={pendingRatingRide} busy={ratingBusyRideId === pendingRatingRide.id} error={ratingError} onSubmit={submitRideRating} onSkip={skipRideRating} />}
       <footer className="footer"><span>TaxiTrack</span><span>Taxi management</span></footer>
     </main>
   )
