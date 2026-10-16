@@ -386,4 +386,17 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .driver-map-heading { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; color: #414e46; font-size: 11px; }
 .driver-map-heading span { color: #7b867f; }
 .driver-map-card .location-map { height: 300px; }
+.driver-presence-card { display: grid; grid-template-columns: 1fr auto; gap: 15px 20px; margin-bottom: 22px; padding: 20px; border: 1px solid rgb(255 255 255 / 22%); border-radius: 14px; background: rgb(10 17 19 / 62%); color: #fff; box-shadow: 0 18px 44px rgb(0 0 0 / 18%); backdrop-filter: blur(7px); }
+.driver-presence-copy h2 { margin: 3px 0 5px; color: #fff; font-size: 19px; }
+.driver-presence-copy p:last-child { margin: 0; color: rgb(255 255 255 / 70%); font-size: 12px; }
+.driver-location-controls { display: flex; grid-column: 1 / -1; align-items: center; gap: 12px; }
+.driver-location-controls span, .driver-location-message { color: rgb(255 255 255 / 75%); font-size: 11px; }
+.driver-presence-map { grid-column: 1 / -1; overflow: hidden; border: 1px solid rgb(255 255 255 / 18%); border-radius: 10px; }
+.driver-presence-map .location-map { height: 220px; cursor: crosshair; }
+.driver-save-location { justify-self: start; }
+.driver-location-message { grid-column: 1 / -1; margin: 0; }
+.driver-approach-map { margin-top: 15px; overflow: hidden; border: 1px solid rgb(255 255 255 / 18%); border-radius: 10px; }
+.driver-approach-map .location-map { height: 230px; }
+.driver-approach-map p { margin: 0; padding: 9px 12px; color: rgb(255 255 255 / 75%); font-size: 11px; }
+@media (max-width: 520px) { .driver-presence-card { grid-template-columns: 1fr; } .driver-presence-card > .primary-button, .driver-presence-card > .secondary-button { justify-self: start; } .driver-location-controls { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 520px) { .trip-actions .primary-button { width: 100%; } }

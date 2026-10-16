@@ -7,7 +7,9 @@ const router = express.Router();
 router.get('/users', requireAuth, requireRole('admin'), async (_req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, full_name, email, role, created_at FROM users ORDER BY created_at DESC',
+      `SELECT u.id, u.full_name, u.email, u.role, u.created_at,
+        COALESCE(p.is_online, FALSE) AS is_online, p.latitude, p.longitude, p.updated_at AS presence_updated_at
+       FROM users u LEFT JOIN driver_presence p ON p.driver_id = u.id ORDER BY u.created_at DESC`,
     );
     return res.json({ users: result.rows.map((row) => ({
       id: String(row.id),
@@ -15,6 +17,9 @@ router.get('/users', requireAuth, requireRole('admin'), async (_req, res) => {
       email: row.email,
       role: row.role,
       createdAt: row.created_at,
+      isOnline: row.is_online,
+      location: row.latitude == null ? null : { latitude: Number(row.latitude), longitude: Number(row.longitude) },
+      presenceUpdatedAt: row.presence_updated_at || null,
     })) });
   } catch (error) {
     console.error('Admin user list failed:', error.code || error.name);
@@ -30,10 +35,12 @@ router.get('/rides', requireAuth, requireRole('admin'), async (_req, res) => {
         r.destination_address, r.destination_latitude, r.destination_longitude, r.status,
         r.created_at, r.requested_at, r.started_at, r.ended_at, r.distance_km, r.distance_source,
         r.duration_minutes, r.estimated_distance_km, r.estimated_duration_minutes,
+        dp.is_online AS driver_is_online, dp.latitude AS driver_latitude, dp.longitude AS driver_longitude,
         r.base_price, r.price_per_km, r.price, r.updated_at
        FROM rides r
        JOIN users c ON c.id = r.client_id
        LEFT JOIN users d ON d.id = r.driver_id
+       LEFT JOIN driver_presence dp ON dp.driver_id = r.driver_id
        ORDER BY r.created_at DESC`,
     );
     return res.json({ rides: result.rows.map((row) => ({
@@ -42,6 +49,8 @@ router.get('/rides', requireAuth, requireRole('admin'), async (_req, res) => {
       driverId: row.driver_id == null ? null : String(row.driver_id),
       clientName: row.client_name,
       driverName: row.driver_name,
+      driverOnline: row.driver_is_online === true,
+      driverLocation: row.driver_latitude == null ? null : { latitude: Number(row.driver_latitude), longitude: Number(row.driver_longitude) },
       pickup: { address: row.pickup_address || null, latitude: row.pickup_latitude, longitude: row.pickup_longitude },
       destination: { address: row.destination_address || null, latitude: row.destination_latitude, longitude: row.destination_longitude },
       status: row.status,
@@ -85,11 +94,17 @@ router.patch('/rides/:id/assign-driver', requireAuth, requireRole('admin'), asyn
     client = await pool.connect();
     await client.query('BEGIN');
     const driver = await client.query(
-      'SELECT id FROM users WHERE id = $1 AND role = \'driver\' FOR UPDATE', [String(driverId)],
+      `SELECT u.id, COALESCE(p.is_online, FALSE) AS is_online
+       FROM users u LEFT JOIN driver_presence p ON p.driver_id = u.id
+       WHERE u.id = $1 AND u.role = 'driver' FOR UPDATE OF u`, [String(driverId)],
     );
     if (!driver.rows[0]) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Driver not found.' });
+    }
+    if (!driver.rows[0].is_online) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'This driver is offline. Choose an online driver.' });
     }
 
     const result = await client.query(

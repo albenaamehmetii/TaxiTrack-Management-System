@@ -420,7 +420,8 @@ test('available drivers exclude accepted or in-progress rides and become assigna
   const users = new Map([
     ['100', { id: '100', full_name: 'Admin', email: 'admin@example.invalid', role: 'admin', created_at: new Date() }],
     ['200', { id: '200', full_name: 'Rider', email: 'rider@example.invalid', role: 'client', created_at: new Date() }],
-    ['300', { id: '300', full_name: 'Driver', email: 'driver@example.invalid', role: 'driver', created_at: new Date() }],
+    ['300', { id: '300', full_name: 'Driver', email: 'driver@example.invalid', role: 'driver', is_online: true, created_at: new Date() }],
+    ['301', { id: '301', full_name: 'Offline Driver', email: 'offline@example.invalid', role: 'driver', is_online: false, created_at: new Date() }],
   ]);
   const makeRide = (id, status, driverId = null) => ({
     id: String(id), client_id: '200', driver_id: driverId, client_name: 'Rider', driver_name: driverId ? 'Driver' : null,
@@ -443,13 +444,18 @@ test('available drivers exclude accepted or in-progress rides and become assigna
       const user = users.get(String(values[0]));
       return { rows: user ? [user] : [] };
     }
-    if (sql.includes('SELECT id, full_name, email, role, created_at FROM users ORDER BY')) {
+    if (sql.includes('FROM users u LEFT JOIN driver_presence')) {
       return { rows: [...users.values()] };
+    }
+    if (sql.includes('SELECT is_online, latitude, longitude, updated_at FROM driver_presence')) {
+      const user = users.get(String(values[0]));
+      return { rows: user ? [{ is_online: user.is_online, latitude: user.latitude ?? null, longitude: user.longitude ?? null, updated_at: new Date() }] : [] };
     }
     if (sql.includes('COUNT(*)::int AS count')) {
       assert.match(sql, /status IN \('accepted', 'in_progress'\)/);
+      assert.match(sql, /driver_presence/);
       const busyDrivers = new Set(rides.filter((ride) => ['accepted', 'in_progress'].includes(ride.status)).map((ride) => ride.driver_id));
-      return { rows: [{ count: [...users.values()].filter((user) => user.role === 'driver' && !busyDrivers.has(user.id)).length }] };
+      return { rows: [{ count: [...users.values()].filter((user) => user.role === 'driver' && user.is_online && !busyDrivers.has(user.id)).length }] };
     }
     if (sql.includes('FROM rides r') && sql.includes('WHERE r.client_id = $1')) {
       return { rows: rides.filter((ride) => ride.client_id === String(values[0])) };
@@ -466,14 +472,28 @@ test('available drivers exclude accepted or in-progress rides and become assigna
   pool.connect = async () => ({
     async query(sql, values = []) {
       if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql)) return { rows: [] };
+      if (sql.includes('SELECT u.id, COALESCE(p.is_online, FALSE)')) {
+        const user = users.get(String(values[0]));
+        return { rows: user?.role === 'driver' ? [{ id: user.id, is_online: user.is_online }] : [] };
+      }
       if (sql.includes('SELECT id FROM users WHERE id = $1 AND role = \'driver\' FOR UPDATE')) {
         const user = users.get(String(values[0]));
         return { rows: user?.role === 'driver' ? [{ id: user.id }] : [] };
+      }
+      if (sql.includes('SELECT is_online FROM driver_presence')) {
+        const user = users.get(String(values[0]));
+        return { rows: user?.is_online ? [{ is_online: true }] : [] };
       }
       if (sql.includes('SELECT id FROM rides WHERE driver_id = $1 AND status IN')) {
         assert.match(sql, /status IN \('accepted', 'in_progress'\)/);
         const active = rides.find((ride) => ride.driver_id === String(values[0]) && ['accepted', 'in_progress'].includes(ride.status));
         return { rows: active ? [{ id: active.id }] : [] };
+      }
+      if (sql.includes('INSERT INTO driver_presence')) {
+        const user = users.get(String(values[0]));
+        user.is_online = values[1];
+        if (values[2] != null) { user.latitude = values[2]; user.longitude = values[3]; }
+        return { rows: [{ is_online: user.is_online, latitude: user.latitude ?? null, longitude: user.longitude ?? null, updated_at: new Date() }] };
       }
       if (sql.includes('UPDATE rides SET driver_id')) {
         assert.match(sql, /NOT EXISTS[\s\S]*active\.status IN \('accepted', 'in_progress'\)/);
@@ -525,11 +545,33 @@ test('available drivers exclude accepted or in-progress rides and become assigna
   assert.equal(findRide(1).status, 'pending');
   assert.equal(findRide(1).driver_id, null);
 
+  const driverPresence = await realFetch(`${origin}/api/rides/presence`, { headers: makeHeaders('300') });
+  assert.equal((await driverPresence.json()).presence.isOnline, true);
+  const offlineDuringActiveRide = await realFetch(`${origin}/api/rides/presence`, {
+    method: 'PUT', headers: makeHeaders('300'), body: JSON.stringify({ isOnline: false }),
+  });
+  assert.equal(offlineDuringActiveRide.status, 409);
+
+  const offlineAssignment = await realFetch(`${origin}/api/admin/rides/1/assign-driver`, {
+    method: 'PATCH', headers: makeHeaders('100'), body: JSON.stringify({ driverId: '301' }),
+  });
+  assert.equal(offlineAssignment.status, 409);
+  assert.equal(findRide(1).status, 'pending');
+
   const cancelled = await realFetch(`${origin}/api/rides/1/cancel`, { method: 'PATCH', headers: makeHeaders('200') });
   assert.equal(cancelled.status, 200);
   assert.equal(findRide(1).status, 'cancelled');
 
   findRide(2).status = 'completed';
+  const goOffline = await realFetch(`${origin}/api/rides/presence`, {
+    method: 'PUT', headers: makeHeaders('300'), body: JSON.stringify({ isOnline: false }),
+  });
+  assert.equal(goOffline.status, 200);
+  assert.equal((await goOffline.json()).presence.isOnline, false);
+  const goOnline = await realFetch(`${origin}/api/rides/presence`, {
+    method: 'PUT', headers: makeHeaders('300'), body: JSON.stringify({ isOnline: true, latitude: 42.66, longitude: 21.16 }),
+  });
+  assert.equal(goOnline.status, 200);
   rides.push(makeRide(3, 'pending'));
   const availableClientRides = await realFetch(`${origin}/api/rides`, { headers: makeHeaders('200') });
   assert.equal((await availableClientRides.json()).freeDriverCount, 1);

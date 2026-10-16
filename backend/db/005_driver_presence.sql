@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS driver_presence (
+  driver_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  is_online BOOLEAN NOT NULL DEFAULT FALSE,
+  latitude DOUBLE PRECISION CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
+  longitude DOUBLE PRECISION CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK ((latitude IS NULL) = (longitude IS NULL))
+);

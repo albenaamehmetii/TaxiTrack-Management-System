@@ -58,6 +58,9 @@ function publicRide(row) {
     driverId: row.driver_id == null ? null : String(row.driver_id),
     clientName: row.client_name,
     driverName: row.driver_name,
+    driverLocation: row.driver_latitude == null ? null : {
+      latitude: Number(row.driver_latitude), longitude: Number(row.driver_longitude),
+    },
     pickup: {
       address: row.pickup_address || null,
       latitude: row.pickup_latitude,
@@ -102,6 +105,7 @@ async function getFreeDriverCount() {
       `SELECT COUNT(*)::int AS count
        FROM users u
        WHERE u.role = 'driver'
+         AND EXISTS (SELECT 1 FROM driver_presence p WHERE p.driver_id = u.id AND p.is_online = TRUE)
          AND NOT EXISTS (
            SELECT 1 FROM rides r
            WHERE r.driver_id = u.id AND r.status IN ('accepted', 'in_progress')
@@ -113,6 +117,69 @@ async function getFreeDriverCount() {
   }
 }
 
+router.get('/presence', requireAuth, requireRole('driver'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT is_online, latitude, longitude, updated_at FROM driver_presence WHERE driver_id = $1`,
+      [req.user.id],
+    );
+    const row = result.rows[0];
+    return res.json({ presence: row ? {
+      isOnline: row.is_online,
+      location: row.latitude == null ? null : { latitude: Number(row.latitude), longitude: Number(row.longitude) },
+      updatedAt: row.updated_at,
+    } : { isOnline: false, location: null, updatedAt: null } });
+  } catch (error) {
+    console.error('Driver presence load failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to load your availability.' });
+  }
+});
+
+router.put('/presence', requireAuth, requireRole('driver'), async (req, res) => {
+  const isOnline = req.body?.isOnline;
+  const { latitude, longitude } = req.body || {};
+  const hasLocation = latitude != null || longitude != null;
+  if (typeof isOnline !== 'boolean' || (hasLocation && !validCoordinate(latitude, longitude))
+    || (isOnline && !hasLocation)) {
+    return res.status(400).json({ message: 'Choose a valid online status and location.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT id FROM users WHERE id = $1 AND role = \'driver\' FOR UPDATE', [req.user.id]);
+    const activeRide = await client.query(
+      `SELECT id FROM rides WHERE driver_id = $1 AND status IN ('accepted', 'in_progress') LIMIT 1`,
+      [req.user.id],
+    );
+    if (!isOnline && activeRide.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'Finish or cancel your active trip before going offline.' });
+    }
+    const saved = await client.query(
+      `INSERT INTO driver_presence (driver_id, is_online, latitude, longitude, updated_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (driver_id) DO UPDATE SET is_online = EXCLUDED.is_online,
+         latitude = COALESCE(EXCLUDED.latitude, driver_presence.latitude),
+         longitude = COALESCE(EXCLUDED.longitude, driver_presence.longitude), updated_at = NOW()
+       RETURNING is_online, latitude, longitude, updated_at`,
+      [req.user.id, isOnline, hasLocation ? latitude : null, hasLocation ? longitude : null],
+    );
+    await client.query('COMMIT');
+    const row = saved.rows[0];
+    return res.json({ presence: {
+      isOnline: row.is_online,
+      location: row.latitude == null ? null : { latitude: Number(row.latitude), longitude: Number(row.longitude) },
+      updatedAt: row.updated_at,
+    } });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Driver presence update failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to update your availability.' });
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/', requireAuth, requireRole('client'), async (req, res) => {
   try {
     const result = await pool.query(
@@ -123,10 +190,12 @@ router.get('/', requireAuth, requireRole('client'), async (req, res) => {
         r.status, r.requested_at, r.started_at, r.ended_at,
         r.distance_km, r.distance_source, r.duration_minutes,
         r.estimated_distance_km, r.estimated_duration_minutes,
+        dp.latitude AS driver_latitude, dp.longitude AS driver_longitude,
         r.base_price, r.price_per_km, r.price, r.updated_at
        FROM rides r
        JOIN users c ON c.id = r.client_id
        LEFT JOIN users d ON d.id = r.driver_id
+       LEFT JOIN driver_presence dp ON dp.driver_id = r.driver_id
        WHERE r.client_id = $1
        ORDER BY r.created_at DESC`,
       [req.user.id],
@@ -231,6 +300,28 @@ router.patch('/:id/cancel', requireAuth, requireRole('client'), async (req, res)
   } catch (error) {
     console.error('Ride cancellation failed:', error.code || error.name);
     return res.status(500).json({ message: 'Unable to cancel this ride right now.' });
+  }
+});
+
+router.get('/:id/approach-estimate', requireAuth, requireRole('client'), async (req, res) => {
+  const rideId = req.params.id;
+  if (!validRideId(rideId)) return res.status(400).json({ message: 'Ride ID is invalid.' });
+  try {
+    const result = await pool.query(
+      `SELECT r.status, r.pickup_latitude, r.pickup_longitude, dp.latitude, dp.longitude
+       FROM rides r LEFT JOIN driver_presence dp ON dp.driver_id = r.driver_id
+       WHERE r.id = $1 AND r.client_id = $2 AND r.status = 'accepted' AND dp.is_online = TRUE`,
+      [rideId, req.user.id],
+    );
+    const ride = result.rows[0];
+    if (!ride) return res.status(404).json({ message: 'Driver location is not available for this request.' });
+    const estimate = await getRoadEstimate(
+      { latitude: Number(ride.latitude), longitude: Number(ride.longitude) },
+      { latitude: Number(ride.pickup_latitude), longitude: Number(ride.pickup_longitude) },
+    );
+    return res.json({ ...estimate });
+  } catch (error) {
+    return res.status(503).json({ message: error.message || 'Driver route estimate is unavailable.' });
   }
 });
 
@@ -353,6 +444,13 @@ router.patch('/:id/accept', requireAuth, requireRole('driver'), async (req, res)
     if (!driver.rows[0]) {
       await client.query('ROLLBACK');
       return res.status(409).json({ message: 'Your driver account is unavailable.' });
+    }
+    const presence = await client.query(
+      `SELECT is_online FROM driver_presence WHERE driver_id = $1 FOR UPDATE`, [req.user.id],
+    );
+    if (!presence.rows[0]?.is_online) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'Go online before accepting a ride.' });
     }
     const activeRide = await client.query(
       `SELECT id FROM rides WHERE driver_id = $1 AND status IN ('accepted', 'in_progress') LIMIT 1`,
