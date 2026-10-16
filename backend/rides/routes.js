@@ -105,6 +105,7 @@ async function getFreeDriverCount() {
       `SELECT COUNT(*)::int AS count
        FROM users u
        WHERE u.role = 'driver'
+         AND COALESCE((SELECT a.status FROM driver_applications a WHERE a.driver_id = u.id), 'approved') = 'approved'
          AND EXISTS (SELECT 1 FROM driver_presence p WHERE p.driver_id = u.id AND p.is_online = TRUE)
          AND NOT EXISTS (
            SELECT 1 FROM rides r
@@ -588,7 +589,10 @@ router.patch('/:id/accept', requireAuth, requireRole('driver'), async (req, res)
     client = await pool.connect();
     await client.query('BEGIN');
     const driver = await client.query(
-      'SELECT id FROM users WHERE id = $1 AND role = \'driver\' FOR UPDATE', [req.user.id],
+      `SELECT u.id FROM users u
+       WHERE u.id = $1 AND u.role = 'driver'
+         AND COALESCE((SELECT a.status FROM driver_applications a WHERE a.driver_id = u.id), 'approved') = 'approved'
+       FOR UPDATE`, [req.user.id],
     );
     if (!driver.rows[0]) {
       await client.query('ROLLBACK');

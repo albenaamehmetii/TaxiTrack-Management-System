@@ -259,6 +259,7 @@ function AdminRatingsSection() {
 function AdminDashboard({ user, onLogout }) {
   const [rides, setRides] = useState([])
   const [drivers, setDrivers] = useState([])
+  const [driverApplications, setDriverApplications] = useState([])
   const [selectedDrivers, setSelectedDrivers] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -274,7 +275,7 @@ function AdminDashboard({ user, onLogout }) {
   const busyDriverIds = useMemo(() => new Set(rides
     .filter((ride) => ['accepted', 'in_progress'].includes(ride.status) && ride.driverId)
     .map((ride) => ride.driverId)), [rides])
-  const availableDrivers = useMemo(() => drivers.filter((driver) => driver.isOnline && !busyDriverIds.has(driver.id)), [drivers, busyDriverIds])
+  const availableDrivers = useMemo(() => drivers.filter((driver) => driver.isOnline && driver.approvalStatus === 'approved' && !busyDriverIds.has(driver.id)), [drivers, busyDriverIds])
   const clients = useMemo(() => [...new Map(rides.map((ride) => [ride.clientId, ride.clientName])).entries()], [rides])
   const currentRides = useMemo(() => rides.filter((ride) => !['completed', 'cancelled'].includes(ride.status)), [rides])
   const pastRides = useMemo(() => rides.filter((ride) => ['completed', 'cancelled'].includes(ride.status)), [rides])
@@ -301,16 +302,19 @@ function AdminDashboard({ user, onLogout }) {
       if (showLoading) setLoading(true)
       setError('')
       try {
-        const [ridesResponse, usersResponse] = await Promise.all([
+        const [ridesResponse, usersResponse, applicationsResponse] = await Promise.all([
           fetch(`${API_URL}/api/admin/rides`, { credentials: 'include' }),
           fetch(`${API_URL}/api/admin/users`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/admin/driver-applications`, { credentials: 'include' }),
         ])
-        const [ridesData, usersData] = await Promise.all([ridesResponse.json(), usersResponse.json()])
+        const [ridesData, usersData, applicationsData] = await Promise.all([ridesResponse.json(), usersResponse.json(), applicationsResponse.json()])
         if (!ridesResponse.ok) throw new Error(ridesData.message || 'Unable to load ride requests.')
         if (!usersResponse.ok) throw new Error(usersData.message || 'Unable to load drivers.')
+        if (!applicationsResponse.ok) throw new Error(applicationsData.message || 'Unable to load driver applications.')
         if (active) {
           setRides(ridesData.rides || [])
           setDrivers((usersData.users || []).filter((item) => item.role === 'driver'))
+          setDriverApplications(applicationsData.applications || [])
         }
       } catch (loadError) {
         if (active) setError(loadError.message || 'Unable to load the admin dashboard.')
@@ -346,6 +350,21 @@ function AdminDashboard({ user, onLogout }) {
       setError(assignError.message || 'Unable to assign this request.')
     } finally {
       setAssigningRide(null)
+    }
+  }
+
+  async function reviewDriverApplication(driverId, decision) {
+    setError('')
+    try {
+      const response = await fetch(`${API_URL}/api/admin/driver-applications/${driverId}/review`, {
+        method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message || 'Unable to review this application.')
+      setReloadKey((value) => value + 1)
+    } catch (reviewError) {
+      setError(reviewError.message || 'Unable to review this application.')
     }
   }
 
@@ -399,8 +418,8 @@ function AdminDashboard({ user, onLogout }) {
       <div className="role-dashboard-heading">
         <div className="welcome-copy">
           <p className="eyebrow">ADMIN DASHBOARD</p>
-          <h1>{adminPage === 'ratings' ? 'Driver ratings.' : 'Ride requests.'}</h1>
-          <p className="intro">{adminPage === 'ratings' ? 'Review driver ratings and rider feedback.' : 'Review new requests and assign each one to a driver.'}</p>
+          <h1>{adminPage === 'ratings' ? 'Driver ratings.' : adminPage === 'drivers' ? 'Driver applications.' : 'Ride requests.'}</h1>
+          <p className="intro">{adminPage === 'ratings' ? 'Review driver ratings and rider feedback.' : adminPage === 'drivers' ? 'Review driver details and approve or reject applications.' : 'Review new requests and assign each one to a driver.'}</p>
         </div>
         <div className="client-account">
           <span className="avatar" aria-hidden="true">{user.fullName.charAt(0).toUpperCase()}</span>
@@ -410,6 +429,7 @@ function AdminDashboard({ user, onLogout }) {
       </div>
       <nav className="admin-page-nav" aria-label="Administrator pages">
         <button type="button" className={adminPage === 'requests' ? 'active' : ''} aria-current={adminPage === 'requests' ? 'page' : undefined} onClick={() => setAdminPage('requests')}>Past Requests</button>
+        <button type="button" className={adminPage === 'drivers' ? 'active' : ''} aria-current={adminPage === 'drivers' ? 'page' : undefined} onClick={() => setAdminPage('drivers')}>Driver applications{driverApplications.filter((item) => item.status === 'pending').length > 0 && ` (${driverApplications.filter((item) => item.status === 'pending').length})`}</button>
         <button type="button" className={adminPage === 'ratings' ? 'active' : ''} aria-current={adminPage === 'ratings' ? 'page' : undefined} onClick={() => setAdminPage('ratings')}>Ratings</button>
       </nav>
       {error && <div className="notice error" role="alert">{error}</div>}
@@ -460,7 +480,21 @@ function AdminDashboard({ user, onLogout }) {
             </section>
           </div>
         )}
-      </div> : <AdminRatingsSection />}
+      </div> : adminPage === 'drivers' ? <section className="driver-application-list" aria-label="Driver applications">
+        {loading && <p className="empty-state">Loading applications…</p>}
+        {!loading && driverApplications.length === 0 && <p className="empty-state">There are no driver applications yet.</p>}
+        {driverApplications.map((application) => <article className="driver-application-card" key={application.driverId}>
+          <div className="admin-group-heading"><h3>{application.fullName}</h3><span className={`status-badge status-${application.status}`}>{application.status}</span></div>
+          <p>{application.email} · {application.phone}</p>
+          <p><strong>Driver license:</strong> {application.licenseNumber}</p>
+          <p><strong>Vehicle registration number:</strong> {application.vehiclePlate}</p>
+          <small>Submitted {formatRideTime(application.submittedAt)}</small>
+          {application.status === 'pending' && <div className="driver-application-actions">
+            <button className="primary-button" type="button" onClick={() => reviewDriverApplication(application.driverId, 'approved')}>Approve</button>
+            <button className="secondary-button" type="button" onClick={() => reviewDriverApplication(application.driverId, 'rejected')}>Reject</button>
+          </div>}
+        </article>)}
+      </section> : <AdminRatingsSection />}
     </section>
   )
 }
@@ -998,6 +1032,9 @@ function App() {
   const [mode, setMode] = useState('login')
   const [fullName, setFullName] = useState('')
   const [registrationRole, setRegistrationRole] = useState('client')
+  const [driverPhone, setDriverPhone] = useState('')
+  const [driverLicenseNumber, setDriverLicenseNumber] = useState('')
+  const [vehiclePlate, setVehiclePlate] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [notice, setNotice] = useState('')
@@ -1164,7 +1201,13 @@ function App() {
 
     try {
       const endpoint = mode === 'register' ? 'register' : 'login'
-      const payload = mode === 'register' ? { fullName, email, password, role: registrationRole } : { email, password }
+      const payload = mode === 'register' ? {
+        fullName, email, password, role: registrationRole,
+        ...(registrationRole === 'driver' ? {
+          phone: driverPhone, licenseNumber: driverLicenseNumber,
+          vehiclePlate,
+        } : {}),
+      } : { email, password }
       const response = await fetch(`${API_URL}/api/auth/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1173,6 +1216,13 @@ function App() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Request failed.')
+      if (data.applicationSubmitted) {
+        setMode('login')
+        setNotice(data.message || 'Your driver application is pending administrator approval.')
+        setNoticeType('success')
+        setPassword('')
+        return
+      }
       setUser(data.user)
       setPassword('')
     } catch (error) {
@@ -1378,7 +1428,7 @@ function App() {
             <div className="form-heading">
               <h2>{mode === 'register' ? 'Create an account' : 'Log in'}</h2>
             </div>
-            {notice && noticeType === 'error' && <div className="notice error" role="alert">{notice}</div>}
+            {notice && <div className={`notice ${noticeType}`} role={noticeType === 'error' ? 'alert' : 'status'}>{notice}</div>}
             <form onSubmit={handleSubmit}>
               {mode === 'register' && (
                 <fieldset className="field role-picker">
@@ -1395,6 +1445,12 @@ function App() {
                   <input autoComplete="name" value={fullName} onChange={(event) => setFullName(event.target.value)} minLength={2} maxLength={160} required placeholder="e.g. Alex Smith" />
                 </label>
               )}
+              {mode === 'register' && registrationRole === 'driver' && <>
+                <label className="field"><span>Phone number</span><input type="tel" autoComplete="tel" value={driverPhone} onChange={(event) => setDriverPhone(event.target.value)} minLength={7} maxLength={30} required placeholder="+383 44 123 456" /></label>
+                <label className="field"><span>Driver license number</span><input autoComplete="off" value={driverLicenseNumber} onChange={(event) => setDriverLicenseNumber(event.target.value)} minLength={3} maxLength={80} required /></label>
+                <label className="field"><span>Vehicle registration number</span><input autoComplete="off" value={vehiclePlate} onChange={(event) => setVehiclePlate(event.target.value)} minLength={2} maxLength={20} required /></label>
+                <p className="role-note">Your driver account will be pending until an administrator reviews your application.</p>
+              </>}
               <label className="field">
                 <span>Email</span>
                 <input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} required placeholder="name@example.com" />

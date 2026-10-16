@@ -4,18 +4,77 @@ const { requireAuth, requireRole } = require('../auth/middleware');
 
 const router = express.Router();
 
+router.get('/driver-applications', requireAuth, requireRole('admin'), async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT a.driver_id, a.phone, a.license_number, a.vehicle_plate,
+        a.status, a.submitted_at, u.full_name, u.email
+       FROM driver_applications a JOIN users u ON u.id = a.driver_id
+       ORDER BY CASE WHEN a.status = 'pending' THEN 0 ELSE 1 END, a.submitted_at DESC`,
+    );
+    return res.json({ applications: result.rows.map((row) => ({
+      driverId: String(row.driver_id), fullName: row.full_name, email: row.email,
+      phone: row.phone, licenseNumber: row.license_number, vehiclePlate: row.vehicle_plate,
+      status: row.status, submittedAt: row.submitted_at,
+    })) });
+  } catch (error) {
+    console.error('Driver application list failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to load driver applications.' });
+  }
+});
+
+router.patch('/driver-applications/:id/review', requireAuth, requireRole('admin'), async (req, res) => {
+  const driverId = req.params.id;
+  const decision = req.body?.decision;
+  if (!/^[0-9]+$/.test(driverId) || BigInt(driverId) < 1n) {
+    return res.status(400).json({ message: 'Driver ID is invalid.' });
+  }
+  if (!['approved', 'rejected'].includes(decision)) {
+    return res.status(400).json({ message: 'Choose approve or reject.' });
+  }
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE driver_applications SET status = $1, reviewed_by = $2, reviewed_at = NOW()
+       WHERE driver_id = $3 AND status = 'pending'
+       RETURNING driver_id, status`,
+      [decision, req.user.id, driverId],
+    );
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'This application has already been reviewed or does not exist.' });
+    }
+    if (decision === 'rejected') {
+      await client.query('UPDATE driver_presence SET is_online = FALSE, updated_at = NOW() WHERE driver_id = $1', [driverId]);
+    }
+    await client.query('COMMIT');
+    return res.json({ driverId: String(result.rows[0].driver_id), status: result.rows[0].status });
+  } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    console.error('Driver application review failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to review this application.' });
+  } finally {
+    client?.release();
+  }
+});
+
 router.get('/users', requireAuth, requireRole('admin'), async (_req, res) => {
   try {
     const result = await pool.query(
       `SELECT u.id, u.full_name, u.email, u.role, u.created_at,
+        COALESCE(a.status, 'approved') AS approval_status,
         COALESCE(p.is_online, FALSE) AS is_online, p.latitude, p.longitude, p.updated_at AS presence_updated_at
-       FROM users u LEFT JOIN driver_presence p ON p.driver_id = u.id ORDER BY u.created_at DESC`,
+       FROM users u LEFT JOIN driver_presence p ON p.driver_id = u.id
+       LEFT JOIN driver_applications a ON a.driver_id = u.id ORDER BY u.created_at DESC`,
     );
     return res.json({ users: result.rows.map((row) => ({
       id: String(row.id),
       fullName: row.full_name,
       email: row.email,
       role: row.role,
+      approvalStatus: row.role === 'driver' ? row.approval_status : null,
       createdAt: row.created_at,
       isOnline: row.is_online,
       location: row.latitude == null ? null : { latitude: Number(row.latitude), longitude: Number(row.longitude) },
@@ -139,8 +198,10 @@ router.patch('/rides/:id/assign-driver', requireAuth, requireRole('admin'), asyn
     client = await pool.connect();
     await client.query('BEGIN');
     const driver = await client.query(
-      `SELECT u.id, COALESCE(p.is_online, FALSE) AS is_online
+      `SELECT u.id, COALESCE(p.is_online, FALSE) AS is_online,
+        COALESCE(a.status, 'approved') AS approval_status
        FROM users u LEFT JOIN driver_presence p ON p.driver_id = u.id
+       LEFT JOIN driver_applications a ON a.driver_id = u.id
        WHERE u.id = $1 AND u.role = 'driver' FOR UPDATE OF u`, [String(driverId)],
     );
     if (!driver.rows[0]) {
@@ -150,6 +211,10 @@ router.patch('/rides/:id/assign-driver', requireAuth, requireRole('admin'), asyn
     if (!driver.rows[0].is_online) {
       await client.query('ROLLBACK');
       return res.status(409).json({ message: 'This driver is offline. Choose an online driver.' });
+    }
+    if (driver.rows[0].approval_status !== 'approved') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'This driver has not been approved.' });
     }
 
     const result = await client.query(

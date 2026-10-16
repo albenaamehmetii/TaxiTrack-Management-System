@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --test tests/rides-gps.test.js",
+    "test": "node --test",
     "dev": "nodemon server.js",
     "db:migrate": "node db/migrate.js",
     "auth:create-user": "node db/create-role-user.js",

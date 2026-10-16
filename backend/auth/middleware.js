@@ -37,12 +37,23 @@ async function requireAuth(req, res, next) {
 
   try {
     const result = await pool.query(
-      'SELECT id, full_name, email, role, created_at FROM users WHERE id = $1 LIMIT 1',
+      `SELECT u.id, u.full_name, u.email, u.role, u.created_at, u.session_version,
+        COALESCE(da.status, 'approved') AS approval_status
+       FROM users u LEFT JOIN driver_applications da ON da.driver_id = u.id
+       WHERE u.id = $1 LIMIT 1`,
       [payload.sub],
     );
     const row = result.rows[0];
     if (!row || !['client', 'driver', 'admin'].includes(row.role)) {
       return res.status(401).json({ message: 'This account is unavailable or has an invalid role.' });
+    }
+    if (Number(payload.sessionVersion || 0) !== Number(row.session_version || 0)) {
+      return res.status(401).json({ message: 'Your session has ended. Please sign in again.' });
+    }
+    if (row.role === 'driver' && row.approval_status !== 'approved') {
+      return res.status(403).json({ message: row.approval_status === 'rejected'
+        ? 'Your driver application was not approved.'
+        : 'Your driver application is pending administrator approval.' });
     }
 
     req.user = {
@@ -51,6 +62,7 @@ async function requireAuth(req, res, next) {
       email: row.email,
       role: row.role,
       createdAt: row.created_at,
+      approvalStatus: row.role === 'driver' ? row.approval_status : undefined,
     };
     return next();
   } catch (error) {

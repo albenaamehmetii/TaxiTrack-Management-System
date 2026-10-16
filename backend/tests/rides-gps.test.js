@@ -104,8 +104,8 @@ async function createTestApi(
   const locations = [...initialLocations];
   let transactionStartLength = locations.length;
   pool.query = async (sql, queryValues = []) => {
-    if (sql.includes('SELECT id, full_name, email, role, created_at FROM users')) {
-      return { rows: [{ id: driverId, full_name: 'Test User', email: 'test@example.invalid', role: userRole, created_at: new Date() }] };
+    if (sql.includes('FROM users u LEFT JOIN driver_applications')) {
+      return { rows: [{ id: driverId, full_name: 'Test User', email: 'test@example.invalid', role: userRole, created_at: new Date(), session_version: 0, approval_status: 'approved' }] };
     }
     if (sql.includes('INSERT INTO rides')) {
       creationValues = queryValues;
@@ -482,12 +482,12 @@ test('available drivers exclude accepted or in-progress rides and become assigna
     if (sql.includes('FROM ride_ratings rating ORDER BY')) {
       return { rows: ratings.map((rating) => ({ ...rating, created_at: rating.created_at })) };
     }
-    if (sql.includes('SELECT id, full_name, email, role, created_at FROM users WHERE id = $1 LIMIT 1')) {
+    if (sql.includes('FROM users u LEFT JOIN driver_applications') && sql.includes('WHERE u.id = $1')) {
       const user = users.get(String(values[0]));
-      return { rows: user ? [user] : [] };
+      return { rows: user ? [{ ...user, session_version: 0, approval_status: 'approved' }] : [] };
     }
     if (sql.includes('FROM users u LEFT JOIN driver_presence')) {
-      return { rows: [...users.values()] };
+      return { rows: [...users.values()].map((user) => ({ ...user, approval_status: 'approved' })) };
     }
     if (sql.includes('SELECT is_online, latitude, longitude, updated_at FROM driver_presence')) {
       const user = users.get(String(values[0]));
@@ -547,9 +547,10 @@ test('available drivers exclude accepted or in-progress rides and become assigna
       }
       if (sql.includes('SELECT u.id, COALESCE(p.is_online, FALSE)')) {
         const user = users.get(String(values[0]));
-        return { rows: user?.role === 'driver' ? [{ id: user.id, is_online: user.is_online }] : [] };
+        return { rows: user?.role === 'driver' ? [{ id: user.id, is_online: user.is_online, approval_status: 'approved' }] : [] };
       }
-      if (sql.includes('SELECT id FROM users WHERE id = $1 AND role = \'driver\' FOR UPDATE')) {
+      if ((sql.includes('SELECT u.id FROM users u') && sql.includes("u.role = 'driver'"))
+        || sql.includes("SELECT id FROM users WHERE id = $1 AND role = 'driver' FOR UPDATE")) {
         const user = users.get(String(values[0]));
         return { rows: user?.role === 'driver' ? [{ id: user.id }] : [] };
       }
