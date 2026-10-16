@@ -50,7 +50,7 @@ function clearSessionCookie(res) {
 
 router.post('/register', async (req, res) => {
   if (!getJwtSecret()) {
-    return res.status(503).json({ message: 'Authentication is not configured. Set JWT_SECRET in backend/.env.' });
+    return res.status(503).json({ message: 'Authentication is not configured. Set JWT_SECRET in server/.env.' });
   }
 
   const fullName = typeof req.body?.fullName === 'string' ? req.body.fullName.trim() : '';
@@ -138,7 +138,7 @@ router.post('/login', (req, res, next) => {
   return next();
 }, async (req, res) => {
   if (!getJwtSecret()) {
-    return res.status(503).json({ message: 'Authentication is not configured. Set JWT_SECRET in backend/.env.' });
+    return res.status(503).json({ message: 'Authentication is not configured. Set JWT_SECRET in server/.env.' });
   }
 
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
@@ -202,7 +202,7 @@ router.get('/me', async (req, res) => {
 
   const secret = getJwtSecret();
   if (!secret) {
-    return res.status(503).json({ message: 'Authentication is not configured. Set JWT_SECRET in backend/.env.' });
+    return res.status(503).json({ message: 'Authentication is not configured. Set JWT_SECRET in server/.env.' });
   }
 
   let payload;

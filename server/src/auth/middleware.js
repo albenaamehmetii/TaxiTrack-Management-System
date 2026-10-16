@@ -19,7 +19,7 @@ function readCookie(req, name) {
 async function requireAuth(req, res, next) {
   const secret = getJwtSecret();
   if (!secret) {
-    return res.status(503).json({ message: 'Authentication is not configured. Set JWT_SECRET in backend/.env.' });
+    return res.status(503).json({ message: 'Authentication is not configured. Set JWT_SECRET in server/.env.' });
   }
 
   const authorization = req.get('authorization') || '';

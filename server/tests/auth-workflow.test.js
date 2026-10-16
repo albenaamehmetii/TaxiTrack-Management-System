@@ -3,11 +3,11 @@ const assert = require('node:assert/strict');
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { pool } = require('../db/pool');
-const authRoutes = require('../auth/routes');
-const adminRoutes = require('../auth/adminRoutes');
-const { requireAuth, requireRole } = require('../auth/middleware');
-const { TOKEN_ISSUER, TOKEN_AUDIENCE } = require('../auth/config');
+const { pool } = require('../src/db/pool');
+const authRoutes = require('../src/auth/routes');
+const adminRoutes = require('../src/admin/routes');
+const { requireAuth, requireRole } = require('../src/auth/middleware');
+const { TOKEN_ISSUER, TOKEN_AUDIENCE } = require('../src/auth/config');
 
 test('driver applications, role access, login throttling, and logout revocation work together', async (t) => {
   process.env.JWT_SECRET = 'auth-workflow-test-secret-with-at-least-32-characters';

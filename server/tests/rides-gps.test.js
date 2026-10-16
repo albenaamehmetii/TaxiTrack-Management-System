@@ -2,9 +2,9 @@ const assert = require('node:assert/strict');
 const { after, test } = require('node:test');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const { pool } = require('../db/pool');
-const { COOKIE_NAME, TOKEN_ISSUER, TOKEN_AUDIENCE } = require('../auth/config');
-const { calculateTrace } = require('../rides/gps');
+const { pool } = require('../src/db/pool');
+const { COOKIE_NAME, TOKEN_ISSUER, TOKEN_AUDIENCE } = require('../src/auth/config');
+const { calculateTrace } = require('../src/rides/gps');
 
 process.env.JWT_SECRET = 'test-only-secret-that-is-not-used-outside-this-test';
 process.env.RIDE_BASE_FARE = '2.00';
@@ -58,7 +58,7 @@ test('GPS trace sums consecutive segments and filters inaccurate or impossible f
 });
 
 test('Road estimate helper converts OSRM meters and seconds to km and rounded-up minutes', async () => {
-  const { getRoadEstimate } = require('../rides/estimate');
+  const { getRoadEstimate } = require('../src/rides/estimate');
   let requestUrl = '';
   const estimate = await getRoadEstimate(
     { latitude: 42.66, longitude: 21.16 },
@@ -75,7 +75,7 @@ test('Road estimate helper converts OSRM meters and seconds to km and rounded-up
 });
 
 test('Road estimate helper fails clearly when OSRM cannot find a route', async () => {
-  const { getRoadEstimate } = require('../rides/estimate');
+  const { getRoadEstimate } = require('../src/rides/estimate');
   await assert.rejects(
     getRoadEstimate(
       { latitude: 42.66, longitude: 21.16 },
@@ -205,7 +205,7 @@ async function createTestApi(
 
   const app = express();
   app.use(express.json());
-  app.use('/api/rides', require('../rides/routes'));
+  app.use('/api/rides', require('../src/rides/routes'));
   const server = app.listen(0, '127.0.0.1');
   servers.add(server);
   await new Promise((resolve) => server.once('listening', resolve));
@@ -466,8 +466,8 @@ test('available drivers exclude accepted or in-progress rides and become assigna
   const findRide = (id) => rides.find((ride) => ride.id === String(id));
   const app = express();
   app.use(express.json());
-  app.use('/api/admin', require('../auth/adminRoutes'));
-  app.use('/api/rides', require('../rides/routes'));
+  app.use('/api/admin', require('../src/admin/routes'));
+  app.use('/api/rides', require('../src/rides/routes'));
 
   pool.query = async (sql, values = []) => {
     if (sql.includes('FROM driver_notifications n JOIN rides r')) {

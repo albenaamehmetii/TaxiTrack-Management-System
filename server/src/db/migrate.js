@@ -2,13 +2,14 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { pool } = require('./pool');
+const MIGRATIONS_DIR = path.resolve(__dirname, '../../migrations');
 
 async function migrate() {
   if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL is missing. Copy .env.example to .env and set your local PostgreSQL connection.');
   }
 
-  const migrationFiles = fs.readdirSync(__dirname)
+  const migrationFiles = fs.readdirSync(MIGRATIONS_DIR)
     .filter((file) => /^\d+_.+\.sql$/.test(file))
     .sort();
   const client = await pool.connect();
@@ -29,7 +30,7 @@ async function migrate() {
           [migrationName],
         );
         if (result.rowCount === 0) {
-          const sql = fs.readFileSync(path.join(__dirname, file), 'utf8');
+          const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
           await client.query(sql);
           await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [migrationName]);
           console.log(`Migration ${migrationName} applied successfully.`);

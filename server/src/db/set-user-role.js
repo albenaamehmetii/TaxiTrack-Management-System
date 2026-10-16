@@ -6,7 +6,7 @@ async function setRole() {
   const confirmedEmail = (process.env.ROLE_CHANGE_CONFIRM_EMAIL || '').trim().toLowerCase();
   const role = (process.env.ROLE_CHANGE_TO || '').trim().toLowerCase();
 
-  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL must be set in backend/.env.');
+  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL must be set in server/.env.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
     throw new Error('ROLE_CHANGE_EMAIL must be a valid account email.');
   }

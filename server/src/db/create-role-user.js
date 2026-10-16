@@ -8,7 +8,7 @@ async function createRoleUser() {
   const password = process.env.SEED_USER_PASSWORD || '';
   const role = (process.env.SEED_USER_ROLE || '').trim().toLowerCase();
 
-  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL must be set in backend/.env.');
+  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL must be set in server/.env.');
   if (fullName.length < 2 || fullName.length > 160) throw new Error('SEED_USER_FULL_NAME must contain 2 to 160 characters.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new Error('SEED_USER_EMAIL must be a valid email.');
   if (password.length < 12 || Buffer.byteLength(password, 'utf8') > 72) throw new Error('SEED_USER_PASSWORD must contain 12 to 72 bytes.');

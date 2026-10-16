@@ -1,14 +1,14 @@
 {
-  "name": "backend",
+  "name": "server",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/server.js",
   "scripts": {
     "test": "node --test",
-    "dev": "nodemon server.js",
-    "db:migrate": "node db/migrate.js",
-    "auth:create-user": "node db/create-role-user.js",
-    "auth:set-role": "node db/set-user-role.js"
+    "dev": "nodemon src/server.js",
+    "db:migrate": "node src/db/migrate.js",
+    "auth:create-user": "node src/db/create-role-user.js",
+    "auth:set-role": "node src/db/set-user-role.js"
   },
   "keywords": [],
   "author": "",
