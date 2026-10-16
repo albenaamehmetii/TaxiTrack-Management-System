@@ -135,6 +135,66 @@ router.get('/presence', requireAuth, requireRole('driver'), async (req, res) => 
   }
 });
 
+router.get('/notifications', requireAuth, requireRole('driver'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT n.id, n.ride_id, n.notification_type, n.created_at, n.read_at, r.status,
+        rating.stars, rating.comment
+       FROM driver_notifications n JOIN rides r ON r.id = n.ride_id
+       LEFT JOIN ride_ratings rating ON rating.ride_id = n.rating_id
+       WHERE n.driver_id = $1
+       ORDER BY n.created_at DESC, n.id DESC`,
+      [req.user.id],
+    );
+    return res.json({ notifications: result.rows.map((row) => ({
+      id: String(row.id), rideId: String(row.ride_id), type: row.notification_type,
+      title: ({
+        new_ride_request: 'New Ride Request',
+        ride_cancelled: 'Ride Cancelled',
+        new_rating_received: 'New Rating Received',
+      })[row.notification_type],
+      message: ({
+        new_ride_request: 'New ride request received. Check the details and accept or decline the request.',
+        ride_cancelled: 'The customer has cancelled the ride.',
+        new_rating_received: 'You received a new rating!',
+      })[row.notification_type],
+      createdAt: row.created_at, readAt: row.read_at, rideStatus: row.status,
+      rating: row.stars == null ? null : { stars: Number(row.stars), comment: row.comment || '' },
+    })) });
+  } catch (error) {
+    console.error('Driver notifications load failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to load your notifications.' });
+  }
+});
+
+router.patch('/notifications/read-all', requireAuth, requireRole('driver'), async (req, res) => {
+  try {
+    await pool.query(
+      'UPDATE driver_notifications SET read_at = NOW() WHERE driver_id = $1 AND read_at IS NULL',
+      [req.user.id],
+    );
+    return res.json({ acknowledged: true });
+  } catch (error) {
+    console.error('Driver notification acknowledgement failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to mark your notifications as read.' });
+  }
+});
+
+router.patch('/notifications/:id/read', requireAuth, requireRole('driver'), async (req, res) => {
+  if (!validRideId(req.params.id)) return res.status(400).json({ message: 'Notification ID is invalid.' });
+  try {
+    await pool.query(
+      `UPDATE driver_notifications SET read_at = NOW()
+       WHERE id = $1 AND driver_id = $2 AND read_at IS NULL`,
+      [req.params.id, req.user.id],
+    );
+    return res.json({ acknowledged: true });
+  } catch (error) {
+    console.error('Driver notification acknowledgement failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to dismiss this notification.' });
+  }
+});
+
 router.put('/presence', requireAuth, requireRole('driver'), async (req, res) => {
   const isOnline = req.body?.isOnline;
   const { latitude, longitude } = req.body || {};
@@ -191,17 +251,25 @@ router.get('/', requireAuth, requireRole('client'), async (req, res) => {
         r.distance_km, r.distance_source, r.duration_minutes,
         r.estimated_distance_km, r.estimated_duration_minutes,
         dp.latitude AS driver_latitude, dp.longitude AS driver_longitude,
-        r.base_price, r.price_per_km, r.price, r.updated_at
+        r.base_price, r.price_per_km, r.price, r.updated_at,
+        rr.stars AS rating_stars, rr.comment AS rating_comment, rr.created_at AS rating_created_at
        FROM rides r
        JOIN users c ON c.id = r.client_id
        LEFT JOIN users d ON d.id = r.driver_id
        LEFT JOIN driver_presence dp ON dp.driver_id = r.driver_id
+       LEFT JOIN ride_ratings rr ON rr.ride_id = r.id
        WHERE r.client_id = $1
        ORDER BY r.created_at DESC`,
       [req.user.id],
     );
     const freeDriverCount = await getFreeDriverCount();
-    return res.json({ rides: result.rows.map(publicRide), freeDriverCount });
+    return res.json({ rides: result.rows.map((row) => ({
+      ...publicRide(row),
+      rating: row.rating_stars == null ? null : {
+        stars: Number(row.rating_stars), comment: row.rating_comment || '', createdAt: row.rating_created_at,
+      },
+      ratingSkipped: false,
+    })), freeDriverCount });
   } catch (error) {
     console.error('Client ride history load failed:', error.code || error.name);
     return res.status(500).json({ message: 'Unable to load your ride history.' });
@@ -284,9 +352,16 @@ router.patch('/:id/cancel', requireAuth, requireRole('client'), async (req, res)
 
   try {
     const result = await pool.query(
-      `UPDATE rides SET status = 'cancelled', updated_at = NOW()
-       WHERE id = $1 AND client_id = $2 AND status IN ('pending', 'accepted')
-       RETURNING id, status, updated_at`,
+      `WITH cancelled AS (
+         UPDATE rides SET status = 'cancelled', updated_at = NOW()
+         WHERE id = $1 AND client_id = $2 AND status IN ('pending', 'accepted')
+         RETURNING id, driver_id, status, updated_at
+       ), notification AS (
+         INSERT INTO driver_notifications (driver_id, ride_id, notification_type)
+         SELECT driver_id, id, 'ride_cancelled' FROM cancelled WHERE driver_id IS NOT NULL
+         ON CONFLICT (ride_id, driver_id, notification_type) DO NOTHING
+       )
+       SELECT id, driver_id, status, updated_at FROM cancelled`,
       [rideId, req.user.id],
     );
     if (!result.rows[0]) {
@@ -300,6 +375,80 @@ router.patch('/:id/cancel', requireAuth, requireRole('client'), async (req, res)
   } catch (error) {
     console.error('Ride cancellation failed:', error.code || error.name);
     return res.status(500).json({ message: 'Unable to cancel this ride right now.' });
+  }
+});
+
+router.post('/:id/rating', requireAuth, requireRole('client'), async (req, res) => {
+  const rideId = req.params.id;
+  const stars = req.body?.stars;
+  const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : '';
+  if (!validRideId(rideId)) return res.status(400).json({ message: 'Ride ID is invalid.' });
+  if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
+    return res.status(400).json({ message: 'Choose a rating from 1 to 5 stars.' });
+  }
+  if (comment.length > 500) return res.status(400).json({ message: 'Comments must be 500 characters or fewer.' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const ride = await client.query(
+      `SELECT id, driver_id, status FROM rides
+       WHERE id = $1 AND client_id = $2 FOR UPDATE`,
+      [rideId, req.user.id],
+    );
+    const row = ride.rows[0];
+    if (!row || row.status !== 'completed' || !row.driver_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'This completed ride cannot be rated.' });
+    }
+    const saved = await client.query(
+      `INSERT INTO ride_ratings (ride_id, client_id, driver_id, stars, comment)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (ride_id) DO NOTHING
+       RETURNING stars, comment, created_at`,
+      [rideId, req.user.id, row.driver_id, stars, comment || null],
+    );
+    if (!saved.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'This ride has already been rated.' });
+    }
+    await client.query(
+      `INSERT INTO driver_notifications (driver_id, ride_id, notification_type, rating_id)
+       VALUES ($1, $2, 'new_rating_received', $2)
+       ON CONFLICT (ride_id, driver_id, notification_type) DO NOTHING`,
+      [String(row.driver_id), String(rideId)],
+    );
+    await client.query('COMMIT');
+    const rating = saved.rows[0];
+    return res.status(201).json({ rating: {
+      stars: Number(rating.stars), comment: rating.comment || '', createdAt: rating.created_at,
+    } });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Ride rating save failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to save this rating right now.' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/:id/rating/skip', requireAuth, requireRole('client'), async (req, res) => {
+  const rideId = req.params.id;
+  if (!validRideId(rideId)) return res.status(400).json({ message: 'Ride ID is invalid.' });
+  try {
+    const result = await pool.query(
+      `SELECT r.id FROM rides r
+       WHERE r.id = $1 AND r.client_id = $2 AND r.status = 'completed'
+         AND r.driver_id IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM ride_ratings WHERE ride_id = r.id)
+       LIMIT 1`,
+      [rideId, req.user.id],
+    );
+    if (!result.rows[0]) return res.status(409).json({ message: 'This ride no longer has a pending rating.' });
+    return res.json({ skipped: true });
+  } catch (error) {
+    console.error('Ride rating skip failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to dismiss the rating right now.' });
   }
 });
 
@@ -419,7 +568,7 @@ router.get('/assigned', requireAuth, requireRole('driver'), async (req, res) => 
        JOIN users c ON c.id = r.client_id
        JOIN users d ON d.id = r.driver_id
        WHERE r.driver_id = $1
-         AND r.status IN ('pending', 'accepted', 'in_progress', 'completed')
+         AND r.status IN ('pending', 'accepted', 'in_progress', 'completed', 'cancelled')
        ORDER BY r.created_at DESC`,
       [req.user.id],
     );

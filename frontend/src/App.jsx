@@ -207,6 +207,55 @@ function AdminPagination({ page, pageCount, onPageChange }) {
   )
 }
 
+function AdminRatingsSection() {
+  const [drivers, setDrivers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [filter, setFilter] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    async function loadRatings() {
+      setLoading(true)
+      setError('')
+      try {
+        const response = await fetch(`${API_URL}/api/admin/ratings`, { credentials: 'include' })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.message || 'Unable to load driver ratings.')
+        if (active) setDrivers(data.drivers || [])
+      } catch (loadError) {
+        if (active) setError(loadError.message || 'Unable to load driver ratings.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    loadRatings()
+    return () => { active = false }
+  }, [reloadKey])
+
+  const shownDrivers = drivers.filter((driver) => !filter || driver.driverId === filter)
+  return (
+    <section className="request-section admin-ratings-section">
+        <div className="request-section-heading"><div><h2>Driver ratings</h2><p>Ratings are based on completed rides.</p></div><button type="button" className="secondary-button" onClick={() => setReloadKey((value) => value + 1)} disabled={loading}>{loading ? 'Loading…' : 'Refresh ratings'}</button></div>
+        <div className="admin-ratings-content">
+          {drivers.length > 0 && <label className="rating-filter"><span>Filter by driver</span><select value={filter} onChange={(event) => setFilter(event.target.value)}><option value="">All drivers</option>{drivers.map((driver) => <option key={driver.driverId} value={driver.driverId}>{driver.driverName}</option>)}</select></label>}
+          {error && <div className="notice error" role="alert">{error}</div>}
+          {loading && <p className="empty-state">Loading ratings…</p>}
+          {!loading && !error && shownDrivers.length === 0 && <p className="empty-state">No drivers found.</p>}
+          <div className="admin-rating-list">{shownDrivers.map((driver) => (
+            <article className="admin-rating-card" key={driver.driverId}>
+              <div className="admin-rating-top"><h3>{driver.driverName}</h3><strong>{driver.totalRatings ? `${driver.averageRating.toFixed(1)} / 5` : 'No ratings yet'}</strong></div>
+              <p>Total ratings: {driver.totalRatings}</p>
+              <div className="rating-distribution">{[5, 4, 3, 2, 1].map((stars) => <span key={stars}>{stars}★ {driver.distribution[stars]}</span>)}</div>
+              {driver.ratings.length > 0 && <details className="rating-review-details"><summary>View individual ratings</summary><ul>{driver.ratings.map((rating) => <li key={rating.rideId}><strong>{'★'.repeat(rating.stars)}{'☆'.repeat(5 - rating.stars)}</strong><span>Ride #{rating.rideId} · {formatRideTime(rating.createdAt)}</span>{rating.comment && <p>{rating.comment}</p>}</li>)}</ul></details>}
+            </article>
+          ))}</div>
+        </div>
+    </section>
+  )
+}
+
 function AdminDashboard({ user, onLogout }) {
   const [rides, setRides] = useState([])
   const [drivers, setDrivers] = useState([])
@@ -221,6 +270,7 @@ function AdminDashboard({ user, onLogout }) {
   const [driverFilter, setDriverFilter] = useState('')
   const [currentPage, setCurrentPage] = useState(0)
   const [pastPage, setPastPage] = useState(0)
+  const [adminPage, setAdminPage] = useState('requests')
   const busyDriverIds = useMemo(() => new Set(rides
     .filter((ride) => ['accepted', 'in_progress'].includes(ride.status) && ride.driverId)
     .map((ride) => ride.driverId)), [rides])
@@ -349,8 +399,8 @@ function AdminDashboard({ user, onLogout }) {
       <div className="role-dashboard-heading">
         <div className="welcome-copy">
           <p className="eyebrow">ADMIN DASHBOARD</p>
-          <h1>Ride requests.</h1>
-          <p className="intro">Review new requests and assign each one to a driver.</p>
+          <h1>{adminPage === 'ratings' ? 'Driver ratings.' : 'Ride requests.'}</h1>
+          <p className="intro">{adminPage === 'ratings' ? 'Review driver ratings and rider feedback.' : 'Review new requests and assign each one to a driver.'}</p>
         </div>
         <div className="client-account">
           <span className="avatar" aria-hidden="true">{user.fullName.charAt(0).toUpperCase()}</span>
@@ -358,8 +408,12 @@ function AdminDashboard({ user, onLogout }) {
           <button className="secondary-button" type="button" onClick={onLogout}>Sign out</button>
         </div>
       </div>
+      <nav className="admin-page-nav" aria-label="Administrator pages">
+        <button type="button" className={adminPage === 'requests' ? 'active' : ''} aria-current={adminPage === 'requests' ? 'page' : undefined} onClick={() => setAdminPage('requests')}>Past Requests</button>
+        <button type="button" className={adminPage === 'ratings' ? 'active' : ''} aria-current={adminPage === 'ratings' ? 'page' : undefined} onClick={() => setAdminPage('ratings')}>Ratings</button>
+      </nav>
       {error && <div className="notice error" role="alert">{error}</div>}
-      <div className="request-section">
+      {adminPage === 'requests' ? <div className="request-section">
         <div className="request-section-heading">
           <div><h2>All requests</h2><p>New requests are listed first.</p></div>
           <button className="secondary-button refresh-button" type="button" onClick={() => setReloadKey((value) => value + 1)} disabled={loading}>Refresh</button>
@@ -406,7 +460,7 @@ function AdminDashboard({ user, onLogout }) {
             </section>
           </div>
         )}
-      </div>
+      </div> : <AdminRatingsSection />}
     </section>
   )
 }
@@ -481,6 +535,15 @@ function DriverDashboard({ user, onLogout }) {
   const [rides, setRides] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [notifications, setNotifications] = useState([])
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [notificationAlerts, setNotificationAlerts] = useState([])
+  const seenNotificationIdsRef = useRef(new Set())
+  const notificationsInitializedRef = useRef(false)
+  const dashboardPageRef = useRef(dashboardPage)
+  const notificationToast = notificationAlerts[0] || null
+
+  useEffect(() => { dashboardPageRef.current = dashboardPage }, [dashboardPage])
   const [workingRide, setWorkingRide] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [suggestedRouteState, setSuggestedRouteState] = useState({
@@ -496,8 +559,11 @@ function DriverDashboard({ user, onLogout }) {
 
   useEffect(() => {
     let active = true
-    async function loadRides() {
-      setLoading(true)
+    let inFlight = false
+    async function loadRides(showLoading = false) {
+      if (inFlight) return
+      inFlight = true
+      if (showLoading) setLoading(true)
       setError('')
       try {
         const response = await fetch(`${API_URL}/api/rides/assigned`, { credentials: 'include' })
@@ -507,12 +573,54 @@ function DriverDashboard({ user, onLogout }) {
       } catch (loadError) {
         if (active) setError(loadError.message || 'Unable to load assigned requests.')
       } finally {
-        if (active) setLoading(false)
+        inFlight = false
+        if (active && showLoading) setLoading(false)
       }
     }
-    loadRides()
-    return () => { active = false }
+    loadRides(true)
+    const refreshTimer = window.setInterval(() => loadRides(), 5000)
+    return () => { active = false; window.clearInterval(refreshTimer) }
   }, [reloadKey])
+
+  useEffect(() => {
+    let active = true
+    let inFlight = false
+    async function loadNotifications() {
+      if (inFlight) return
+      inFlight = true
+      try {
+        const response = await fetch(`${API_URL}/api/rides/notifications`, { credentials: 'include' })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.message || 'Unable to load ride notifications.')
+        const nextNotifications = data.notifications || []
+        const freshNotifications = nextNotifications.filter((item) => !seenNotificationIdsRef.current.has(item.id))
+        if (active && notificationsInitializedRef.current) {
+          const alertNotifications = freshNotifications.filter((item) => (
+            ['new_ride_request', 'ride_cancelled'].includes(item.type)
+            && !(item.type === 'new_ride_request' && dashboardPageRef.current === 'rides')
+          ))
+          if (alertNotifications.length) setNotificationAlerts((current) => {
+            const queuedIds = new Set(current.map((item) => item.id))
+            return [...current, ...alertNotifications.filter((item) => !queuedIds.has(item.id))]
+          })
+        }
+        nextNotifications.forEach((item) => seenNotificationIdsRef.current.add(item.id))
+        notificationsInitializedRef.current = true
+        if (active) setNotifications(nextNotifications)
+      } catch (notificationError) {
+        if (active) setError(notificationError.message || 'Unable to load ride notifications.')
+      } finally { inFlight = false }
+    }
+    loadNotifications()
+    const timer = window.setInterval(loadNotifications, 5000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [])
+
+  useEffect(() => {
+    if (!notificationToast) return undefined
+    const timer = window.setTimeout(() => setNotificationAlerts((current) => current.filter((item) => item.id !== notificationToast.id)), 10000)
+    return () => window.clearTimeout(timer)
+  }, [notificationToast])
 
   useEffect(() => {
     let active = true
@@ -574,9 +682,52 @@ function DriverDashboard({ user, onLogout }) {
     }
   }
 
+  const unreadNotificationCount = notifications.filter((notification) => !notification.readAt).length
+
+  async function markAllNotificationsRead() {
+    if (unreadNotificationCount === 0) return
+    try {
+      const response = await fetch(`${API_URL}/api/rides/notifications/read-all`, { method: 'PATCH', credentials: 'include' })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message || 'Unable to mark your notifications as read.')
+      const readAt = new Date().toISOString()
+      setNotifications((current) => current.map((notification) => notification.readAt ? notification : { ...notification, readAt }))
+    } catch (notificationError) {
+      setError(notificationError.message || 'Unable to mark your notifications as read.')
+    }
+  }
+
+  async function openDriverNotification(notification) {
+    if (!notification.readAt) {
+      try {
+        const response = await fetch(`${API_URL}/api/rides/notifications/${notification.id}/read`, { method: 'PATCH', credentials: 'include' })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.message || 'Unable to mark this notification as read.')
+        setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt: new Date().toISOString() } : item))
+      } catch (notificationError) {
+        setError(notificationError.message || 'Unable to mark this notification as read.')
+        return false
+      }
+    }
+    setNotificationsOpen(false)
+    setDashboardPage('rides')
+    setReloadKey((value) => value + 1)
+    return true
+  }
+
+  async function viewNotificationAlert(notification) {
+    if (await openDriverNotification(notification)) {
+      setNotificationAlerts((current) => current.filter((item) => item.id !== notification.id))
+    }
+  }
+
+  function dismissNotificationAlert(notification) {
+    setNotificationAlerts((current) => current.filter((item) => item.id !== notification.id))
+  }
+
   return (
     <section className="role-dashboard">
-      <div className="role-dashboard-heading">
+      <div className="role-dashboard-heading driver-dashboard-heading">
         <div className="welcome-copy">
           <p className="eyebrow">DRIVER DASHBOARD</p>
           <h1>{dashboardPage === 'status' ? 'Driver status.' : 'Your rides.'}</h1>
@@ -587,10 +738,36 @@ function DriverDashboard({ user, onLogout }) {
           <span className="client-account-info"><strong>{user.fullName}</strong><span>Driver</span></span>
           <button className="secondary-button" type="button" aria-current={dashboardPage === 'rides' ? 'page' : undefined} onClick={() => setDashboardPage('rides')}>Your rides</button>
           <button className="secondary-button" type="button" aria-current={dashboardPage === 'status' ? 'page' : undefined} onClick={() => setDashboardPage('status')}>Driver Status</button>
+          <div className="driver-notification-control">
+            <button className="driver-notification-bell" type="button" aria-label={`Notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ''}`} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
+              {unreadNotificationCount > 0 && <span className="driver-notification-count">{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</span>}
+            </button>
+            {notificationsOpen && <div className="driver-notification-panel" role="region" aria-label="Driver notifications">
+              <div className="driver-notification-panel-heading"><strong>Notifications</strong><button type="button" onClick={markAllNotificationsRead} disabled={unreadNotificationCount === 0}>Mark all as read</button></div>
+              {notifications.length === 0 ? <p className="driver-notification-empty">No notifications yet.</p> : <div className="driver-notification-list">
+                {notifications.map((notification) => <button type="button" className={`driver-notification-item is-${notification.type}${notification.readAt ? ' is-read' : ' is-unread'}`} key={notification.id} onClick={() => openDriverNotification(notification)}>
+                  <span className="driver-notification-item-heading"><strong><span aria-hidden="true">{notification.type === 'ride_cancelled' ? '✕' : notification.type === 'new_ride_request' ? '🚕' : notification.type === 'new_rating_received' ? '★' : '•'}</span> {notification.title}</strong><small>{notification.readAt ? 'Read' : 'Unread'}</small></span>
+                  <span className="driver-notification-message">{notification.message}</span>
+                  {notification.rating && <span className="driver-notification-rating"><strong>{'★'.repeat(notification.rating.stars)}{'☆'.repeat(5 - notification.rating.stars)}</strong>{notification.rating.comment && <span>{notification.rating.comment}</span>}</span>}
+                  <time dateTime={notification.createdAt}>{formatRideTime(notification.createdAt)}</time>
+                </button>)}
+              </div>}
+            </div>}
+          </div>
           <button className="secondary-button" type="button" onClick={onLogout}>Sign out</button>
         </div>
       </div>
       {error && <div className="notice error" role="alert">{error}</div>}
+      {notificationToast && <div className={`driver-notification-toast is-${notificationToast.type}`} role="alert" aria-live="assertive">
+        <span className="driver-notification-toast-icon" aria-hidden="true">{notificationToast.type === 'ride_cancelled' ? '✕' : '🚕'}</span>
+        <div className="driver-notification-toast-content">
+          <strong>{notificationToast.type === 'ride_cancelled' ? 'RIDE CANCELLED' : 'NEW RIDE REQUEST'}</strong>
+          <span>{notificationToast.type === 'ride_cancelled' ? 'The customer has cancelled the ride.' : 'New ride request received. Check the details and accept or decline the request.'}</span>
+          <button type="button" className="driver-notification-toast-action" onClick={() => viewNotificationAlert(notificationToast)}>{notificationToast.type === 'ride_cancelled' ? 'View Details' : 'View Request'}</button>
+        </div>
+        <button type="button" className="driver-notification-toast-close" aria-label="Dismiss notification" onClick={() => dismissNotificationAlert(notificationToast)}>×</button>
+      </div>}
       {dashboardPage === 'status' ? <DriverStatusPage /> : <div className="request-section">
         <div className="request-section-heading">
           <div><h2>All requests</h2><p>Current assignments and completed trips for your account.</p></div>
@@ -616,7 +793,7 @@ function DriverDashboard({ user, onLogout }) {
                   </div>}
                   <TripSummary ride={ride} />
                 </details>}
-                {ride.status !== 'completed' && <div className="driver-map-card">
+                {!['completed', 'cancelled'].includes(ride.status) && <div className="driver-map-card">
                   <div className="driver-map-heading"><strong>{ride.status === 'in_progress' ? 'Trip in progress' : 'Pickup and destination'}</strong><span>{routeRide?.id === ride.id && routeLoading ? 'Loading suggested route…' : 'No GPS tracking required'}</span></div>
                   <LocationMap activeLocation="driver" pickup={ride.pickup} destination={ride.destination} suggestedRoute={routeRide?.id === ride.id ? suggestedRoute : []} />
                   {routeRide?.id === ride.id && routeError && <p className="map-attribution">{routeError}</p>}
@@ -670,6 +847,63 @@ function ClientRideHistory({ rides, loading, error, onRetryEstimate, estimateBus
         </div>
       )}
     </section>
+  )
+}
+
+function ClientRatingsPage({ rides, locallySkippedRatingIds, busyRideId, error, notice, onSubmit, onSkip }) {
+  const completedRides = rides.filter((ride) => ride.status === 'completed' && ride.driverId)
+  return (
+    <div className="client-ratings-page">
+      <div className="client-dashboard-heading">
+        <div className="welcome-copy"><p className="eyebrow">YOUR RIDES</p><h1>Ratings</h1><p className="intro">Share feedback about your completed rides.</p></div>
+      </div>
+      {notice && <div className="notice success" role="status">{notice}</div>}
+      {error && <div className="notice error" role="alert">{error}</div>}
+      {completedRides.length === 0 ? <p className="empty-state">Completed rides will appear here.</p> : (
+        <div className="client-rating-list">
+          {completedRides.map((ride) => <ClientRideRatingCard key={ride.id} ride={ride} skippedLocally={locallySkippedRatingIds.has(ride.id)} busy={busyRideId === ride.id} onSubmit={onSubmit} onSkip={onSkip} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RideRatingPrompt({ ride, busy, error, notice, onSubmit, onSkip }) {
+  return (
+    <div className="modal-backdrop rating-modal-backdrop" role="presentation">
+      <section className="action-modal rating-modal" role="dialog" aria-modal="true" aria-labelledby="ride-rating-prompt-title">
+        <p className="card-eyebrow">RIDE #{ride.id} · COMPLETED</p>
+        <h2 id="ride-rating-prompt-title">Would you like to rate the driver?</h2>
+        <p>Your trip has ended. Submit a rating or choose Skip.</p>
+        <ClientRideRatingCard ride={ride} busy={busy} onSubmit={onSubmit} onSkip={onSkip} />
+        {error && <div className="notice error" role="alert">{error}</div>}
+        {notice && <div className="notice success" role="status">{notice}</div>}
+      </section>
+    </div>
+  )
+}
+
+function ClientRideRatingCard({ ride, skippedLocally = false, busy, onSubmit, onSkip }) {
+  const [stars, setStars] = useState(0)
+  const [comment, setComment] = useState('')
+  const alreadyRated = Boolean(ride.rating)
+  const alreadySkipped = skippedLocally
+  const descriptions = ['', 'Very poor experience', 'Poor experience', 'Average experience', 'Good experience', 'Excellent experience']
+  return (
+    <article className="client-rating-card">
+      <div className="client-rating-card-heading"><div><p className="card-eyebrow">RIDE #{ride.id}</p><h2>{ride.driverName || 'Completed ride'}</h2></div><span>{ride.requestedAt ? formatRideTime(ride.requestedAt) : 'Completed'}</span></div>
+      {alreadyRated ? <p className="client-rating-result" role="status">Your rating: <strong>{'★'.repeat(ride.rating.stars)}{'☆'.repeat(5 - ride.rating.stars)}</strong>{ride.rating.comment && <span> · {ride.rating.comment}</span>}</p>
+        : alreadySkipped ? <p className="client-rating-result">Rating skipped</p>
+          : <>
+            <p>How was your ride with {ride.driverName || 'the driver'}?</p>
+            <div className="rating-stars" role="radiogroup" aria-label={`Rate ride ${ride.id} from 1 to 5 stars`}>
+              {[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" role="radio" tabIndex={stars === value || (stars === 0 && value === 1) ? 0 : -1} aria-checked={stars === value} aria-label={`${value} ${value === 1 ? 'star' : 'stars'}: ${descriptions[value]}`} className={value <= stars ? 'is-selected' : ''} onClick={() => setStars(value)} disabled={busy}>★</button>)}
+            </div>
+            <p className="rating-description">{descriptions[stars] || 'Choose from 1 to 5 stars'}</p>
+            <label className="rating-comment"><span>Comment (optional)</span><textarea value={comment} onChange={(event) => setComment(event.target.value)} maxLength={500} rows={3} disabled={busy} /></label>
+            <div className="rating-modal-actions"><button type="button" className="secondary-button" onClick={() => onSkip(ride)} disabled={busy}>{busy ? 'Saving…' : 'Skip'}</button><button type="button" className="primary-button" onClick={() => onSubmit(ride, stars, comment)} disabled={busy || stars < 1}>{busy ? 'Saving…' : 'Submit Rating'}</button></div>
+          </>}
+    </article>
   )
 }
 
@@ -790,11 +1024,29 @@ function App() {
   const [cancellingClientRideId, setCancellingClientRideId] = useState(null)
   const [clientCancelError, setClientCancelError] = useState('')
   const [estimateBusyId, setEstimateBusyId] = useState(null)
+  const [ratingBusyRideId, setRatingBusyRideId] = useState(null)
+  const [ratingError, setRatingError] = useState('')
+  const [ratingNotice, setRatingNotice] = useState('')
+  const [locallySkippedRatingIds, setLocallySkippedRatingIds] = useState(() => new Set())
+  const [ratingPromptDismissed, setRatingPromptDismissed] = useState(false)
+  const knownCompletedRideIdsRef = useRef(null)
+  const [clientPage, setClientPage] = useState('dashboard')
   const clientRidesAwaitingDriver = clientRides.some((ride) => ['pending', 'accepted', 'in_progress'].includes(ride.status))
+  const pendingRatingRide = ratingPromptDismissed ? null : clientRides.find((ride) => ride.status === 'completed' && ride.driverId && !ride.rating && !locallySkippedRatingIds.has(ride.id))
+  const pendingRatingCount = clientRides.filter((ride) => ride.status === 'completed' && ride.driverId && !ride.rating && !locallySkippedRatingIds.has(ride.id)).length
   const focusedClientRide = clientRides.find((ride) => ride.id === focusedClientRideId)
   const activeClientRide = hideClientRideProgress
     ? null
     : focusedClientRide || clientRides.find((ride) => ['pending', 'accepted', 'in_progress'].includes(ride.status))
+
+  useEffect(() => {
+    const completedRideIds = new Set(clientRides.filter((ride) => ride.status === 'completed' && ride.driverId).map((ride) => ride.id))
+    if (knownCompletedRideIdsRef.current !== null
+      && [...completedRideIds].some((rideId) => !knownCompletedRideIdsRef.current.has(rideId))) {
+      setRatingPromptDismissed(false)
+    }
+    knownCompletedRideIdsRef.current = completedRideIds
+  }, [clientRides])
 
   useEffect(() => {
     let active = true
@@ -872,6 +1124,37 @@ function App() {
     } finally {
       setCancellingClientRideId(null)
     }
+  }
+
+  async function submitRideRating(ride, stars, comment) {
+    if (ratingBusyRideId !== null || !Number.isInteger(stars) || stars < 1 || stars > 5) return
+    setRatingBusyRideId(ride.id)
+    setRatingError('')
+    setRatingNotice('')
+    try {
+      const response = await fetch(`${API_URL}/api/rides/${ride.id}/rating`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stars, comment }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message || 'Unable to submit this rating.')
+      setClientRides((current) => current.map((item) => item.id === ride.id ? { ...item, rating: data.rating } : item))
+      setRatingNotice(`Rating for ride #${ride.id} submitted successfully.`)
+      setRatingPromptDismissed(true)
+    } catch (error) {
+      setRatingError(error.message || 'Unable to submit this rating.')
+    } finally {
+      setRatingBusyRideId(null)
+    }
+  }
+
+  async function skipRideRating(ride) {
+    if (ratingBusyRideId !== null) return
+    setRatingError('')
+    setRatingNotice('')
+    setLocallySkippedRatingIds((current) => new Set(current).add(ride.id))
+    setRatingNotice(`Rating for ride #${ride.id} skipped for this visit.`)
+    setRatingPromptDismissed(true)
   }
 
   async function handleSubmit(event) {
@@ -1018,6 +1301,10 @@ function App() {
           <div className="rider-topbar-tools">
             <span className="rider-live"><i /> Live</span>
             <span className="rider-notification" aria-label="Notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg></span>
+            <nav className="rider-page-nav" aria-label="Rider pages">
+              <button type="button" className={clientPage === 'dashboard' ? 'active' : ''} onClick={() => setClientPage('dashboard')}>Dashboard</button>
+              <button type="button" className={clientPage === 'ratings' ? 'active' : ''} onClick={() => setClientPage('ratings')}>Ratings{pendingRatingCount > 0 && <span className="rating-nav-count">{pendingRatingCount}</span>}</button>
+            </nav>
             <span className="rider-identity"><strong>{user.fullName}</strong><small>Rider</small></span>
             <button className="rider-logout" type="button" onClick={handleLogout}>Log out</button>
           </div>
@@ -1027,6 +1314,8 @@ function App() {
       {user ? (
         user.role === 'client' ? (
           <section className="client-dashboard">
+            {clientPage === 'ratings' ? <ClientRatingsPage rides={clientRides} locallySkippedRatingIds={locallySkippedRatingIds} busyRideId={ratingBusyRideId} error={ratingError} notice={ratingNotice} onSubmit={submitRideRating} onSkip={skipRideRating} /> : <>
+            {ratingNotice && !pendingRatingRide && <div className="notice success" role="status">{ratingNotice}</div>}
             {activeClientRide ? (
               <ClientRideProgress
                 ride={activeClientRide}
@@ -1069,6 +1358,7 @@ function App() {
               </section>
               <ClientRideHistory rides={clientRides} loading={clientRidesLoading} error={clientRidesError} onRetryEstimate={retryRideEstimate} estimateBusyId={estimateBusyId} />
             </div>
+            </>}
             </>}
           </section>
         ) : user.role === 'admin' ? (
@@ -1122,6 +1412,7 @@ function App() {
           </div>
         </section>
       )}
+      {user?.role === 'client' && pendingRatingRide && <RideRatingPrompt key={pendingRatingRide.id} ride={pendingRatingRide} busy={ratingBusyRideId === pendingRatingRide.id} error={ratingError} notice={ratingNotice} onSubmit={submitRideRating} onSkip={skipRideRating} />}
       <footer className="footer"><span>TaxiTrack</span><span>Taxi management</span></footer>
     </main>
   )

@@ -27,6 +27,51 @@ router.get('/users', requireAuth, requireRole('admin'), async (_req, res) => {
   }
 });
 
+router.get('/ratings', requireAuth, requireRole('admin'), async (_req, res) => {
+  try {
+    const [summaryResult, detailResult] = await Promise.all([
+      pool.query(
+        `SELECT d.id AS driver_id, d.full_name AS driver_name,
+          COUNT(rating.ride_id)::int AS total_ratings,
+          AVG(rating.stars)::numeric(4, 2) AS average_rating,
+          COUNT(rating.ride_id) FILTER (WHERE rating.stars = 1)::int AS one_star,
+          COUNT(rating.ride_id) FILTER (WHERE rating.stars = 2)::int AS two_star,
+          COUNT(rating.ride_id) FILTER (WHERE rating.stars = 3)::int AS three_star,
+          COUNT(rating.ride_id) FILTER (WHERE rating.stars = 4)::int AS four_star,
+          COUNT(rating.ride_id) FILTER (WHERE rating.stars = 5)::int AS five_star
+         FROM users d LEFT JOIN ride_ratings rating ON rating.driver_id = d.id
+         WHERE d.role = 'driver'
+         GROUP BY d.id, d.full_name ORDER BY d.full_name`,
+      ),
+      pool.query(
+        `SELECT rating.ride_id, rating.driver_id, rating.stars, rating.comment, rating.created_at
+         FROM ride_ratings rating ORDER BY rating.created_at DESC, rating.ride_id DESC`,
+      ),
+    ]);
+    const detailsByDriver = new Map();
+    for (const row of detailResult.rows) {
+      const list = detailsByDriver.get(String(row.driver_id)) || [];
+      list.push({
+        rideId: String(row.ride_id), stars: Number(row.stars),
+        comment: row.comment || '', createdAt: row.created_at,
+      });
+      detailsByDriver.set(String(row.driver_id), list);
+    }
+    return res.json({ drivers: summaryResult.rows.map((row) => ({
+      driverId: String(row.driver_id), driverName: row.driver_name,
+      totalRatings: Number(row.total_ratings), averageRating: row.average_rating == null ? null : Number(row.average_rating),
+      distribution: {
+        1: Number(row.one_star), 2: Number(row.two_star), 3: Number(row.three_star),
+        4: Number(row.four_star), 5: Number(row.five_star),
+      },
+      ratings: detailsByDriver.get(String(row.driver_id)) || [],
+    })) });
+  } catch (error) {
+    console.error('Admin driver ratings load failed:', error.code || error.name);
+    return res.status(500).json({ message: 'Unable to load driver ratings.' });
+  }
+});
+
 router.get('/rides', requireAuth, requireRole('admin'), async (_req, res) => {
   try {
     const result = await pool.query(
@@ -122,6 +167,12 @@ router.patch('/rides/:id/assign-driver', requireAuth, requireRole('admin'), asyn
       await client.query('ROLLBACK');
       return res.status(409).json({ message: 'This driver is no longer available, or this request has already been assigned or is no longer pending.' });
     }
+    await client.query(
+      `INSERT INTO driver_notifications (driver_id, ride_id, notification_type)
+       VALUES ($1, $2, 'new_ride_request')
+       ON CONFLICT (ride_id, driver_id, notification_type) DO NOTHING`,
+      [String(result.rows[0].driver_id), String(result.rows[0].id)],
+    );
     await client.query('COMMIT');
     return res.json({ ride: {
       id: String(result.rows[0].id),

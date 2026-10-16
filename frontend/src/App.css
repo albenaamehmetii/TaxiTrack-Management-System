@@ -162,12 +162,36 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .rider-live i { width: 6px; height: 6px; border-radius: 50%; background: #20c99a; box-shadow: 0 0 8px rgb(32 201 154 / 55%); }
 .rider-notification { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; background: rgb(255 255 255 / 7%); color: #f0ae2e; }
 .rider-notification svg { width: 14px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.rider-page-nav { display: flex; align-items: center; gap: 5px; }
+.rider-page-nav button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 11px; border: 1px solid transparent; border-radius: 16px; background: transparent; color: #cbd2e1; font-size: 10px; font-weight: 650; cursor: pointer; }
+.rider-page-nav button:hover, .rider-page-nav button.active { border-color: rgb(255 255 255 / 13%); background: rgb(255 255 255 / 9%); color: #fff; }
+.rating-nav-count { display: inline-grid; min-width: 16px; height: 16px; place-items: center; padding: 0 4px; border-radius: 10px; background: #efa51b; color: #201708; font-size: 9px; }
 .rider-identity { display: grid; gap: 1px; text-align: right; }
 .rider-identity strong { font-size: 11px; font-weight: 650; }
 .rider-identity small { color: #929cb0; font-size: 9px; }
 .rider-logout { min-height: 30px; padding: 0 13px; border: 1px solid rgb(255 255 255 / 14%); border-radius: 18px; background: rgb(255 255 255 / 6%); color: #e6eaf2; font-size: 10px; font-weight: 600; }
 .rider-logout:hover { background: rgb(255 255 255 / 13%); }
 .rider-page .client-dashboard { padding: 25px 0 36px; }
+.client-ratings-page { min-height: 70vh; }
+.client-ratings-page .client-dashboard-heading { margin: 10px 0 24px; }
+.rider-page .client-ratings-page .welcome-copy h1 { color: #f4f5f9; }
+.rider-page .client-ratings-page .intro { color: #aab3c5; }
+.client-rating-list { display: grid; gap: 13px; max-width: 760px; }
+.client-rating-card { padding: 18px 20px; border: 1px solid rgb(255 255 255 / 10%); border-radius: 14px; background: linear-gradient(145deg, rgb(26 32 49 / 95%), rgb(20 25 39 / 96%)); color: #e9edf5; }
+.client-rating-card-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 15px; }
+.client-rating-card-heading .card-eyebrow { margin: 0 0 5px; color: #f0ae2e; font-size: 9px; }
+.client-rating-card-heading h2 { margin: 0; color: #f4f5f9; font: 700 15px Manrope, sans-serif; }
+.client-rating-card-heading > span { color: #929cb0; font-size: 10px; }
+.client-rating-card > p:not(.rating-description) { color: #aab3c5; font-size: 11px; }
+.client-rating-card .rating-stars { justify-content: flex-start; margin: 12px 0 2px; }
+.client-rating-card .rating-stars button { width: 38px; height: 38px; font-size: 27px; }
+.client-rating-card .rating-description { margin: 4px 0 12px; color: #ffcf74; font-size: 11px; }
+.client-rating-card .rating-comment { color: #aab3c5; }
+.client-rating-card .rating-comment textarea { border-color: rgb(255 255 255 / 14%); background: rgb(255 255 255 / 6%); color: #f4f5f9; }
+.client-rating-card .rating-modal-actions { justify-content: flex-start; }
+.client-rating-card .rating-modal-actions .secondary-button { border-color: rgb(255 255 255 / 20%); background: rgb(255 255 255 / 7%); color: #e9edf5; }
+.client-rating-result { color: #aab3c5; font-size: 12px; }
+.client-rating-result strong { color: #ffbd4a; letter-spacing: 2px; }
 .rider-dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.48fr) minmax(290px, .94fr); gap: 20px; align-items: start; }
 .rider-booking-card, .rider-history-panel { min-width: 0; border: 1px solid rgb(255 255 255 / 9%); border-radius: 17px; background: linear-gradient(145deg, rgb(26 32 49 / 95%), rgb(20 25 39 / 96%)); box-shadow: 0 20px 50px rgb(0 0 0 / 22%); color: #f1f3f8; }
 .rider-booking-card { padding: 20px; }
@@ -232,6 +256,8 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
   .rider-topbar-tools { gap: 7px; }
   .rider-live { padding: 5px 7px; }
   .rider-notification { display: none; }
+  .rider-page-nav { gap: 0; }
+  .rider-page-nav button { padding: 0 8px; font-size: 9px; }
   .rider-identity strong { max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rider-booking-card { padding: 15px; }
   .rider-booking-card .location-map { height: 225px; }
@@ -265,6 +291,7 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .role-dashboard { flex: 1; padding: 54px 0 46px; }
 .client-history { margin-top: 24px; }
 .role-dashboard-heading { display: flex; align-items: center; justify-content: space-between; gap: 28px; margin-bottom: 30px; }
+.driver-dashboard-heading { position: relative; z-index: 30; }
 .role-dashboard-heading .welcome-copy h1 { font-size: clamp(34px, 4vw, 48px); }
 .role-dashboard-heading .intro { margin-top: 12px; }
 .request-section { padding: 25px; border: 1px solid #e7ebe5; border-radius: 16px; background: #fff; box-shadow: 0 14px 36px rgb(33 47 38 / 5%); }
@@ -425,6 +452,43 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .driver-approach-map { margin-top: 15px; overflow: hidden; border: 1px solid rgb(255 255 255 / 18%); border-radius: 10px; }
 .driver-approach-map .location-map { height: 230px; }
 .driver-approach-map p { margin: 0; padding: 9px 12px; color: rgb(255 255 255 / 75%); font-size: 11px; }
+.driver-notification-control { position: relative; }
+.driver-notification-bell { position: relative; display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid rgb(255 255 255 / 14%); border-radius: 50%; background: rgb(255 255 255 / 7%); color: #f0ae2e; cursor: pointer; }
+.driver-notification-bell:hover, .driver-notification-bell[aria-expanded="true"] { background: rgb(255 255 255 / 14%); }
+.driver-notification-bell svg { width: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.driver-notification-count { position: absolute; top: -5px; right: -7px; display: grid; min-width: 17px; height: 17px; place-items: center; padding: 0 4px; border: 2px solid #10171b; border-radius: 10px; background: #e85f55; color: #fff; font-size: 9px; font-weight: 800; }
+.driver-notification-panel { position: absolute; z-index: 1100; top: calc(100% + 10px); right: 0; width: min(380px, calc(100vw - 28px)); max-height: 470px; overflow: hidden; border: 1px solid rgb(255 255 255 / 16%); border-radius: 13px; background: #151d25; color: #eef2f4; box-shadow: 0 18px 55px rgb(0 0 0 / 45%); text-align: left; }
+.driver-notification-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 14px; border-bottom: 1px solid rgb(255 255 255 / 12%); }
+.driver-notification-panel-heading strong { font-size: 13px; }
+.driver-notification-panel-heading button { padding: 5px 7px; border: 0; background: transparent; color: #ffbd4a; font-size: 10px; cursor: pointer; }
+.driver-notification-panel-heading button:disabled { color: rgb(255 255 255 / 35%); cursor: default; }
+.driver-notification-list { max-height: 410px; overflow-y: auto; }
+.driver-notification-item { display: grid; width: 100%; gap: 6px; padding: 12px 14px; border: 0; border-bottom: 1px solid rgb(255 255 255 / 9%); background: transparent; color: #eef2f4; text-align: left; cursor: pointer; }
+.driver-notification-item:hover { background: rgb(255 255 255 / 7%); }
+.driver-notification-item.is-unread { background: rgb(255 189 74 / 12%); box-shadow: inset 3px 0 #ffbd4a; }
+.driver-notification-item-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.driver-notification-item-heading strong { font-size: 11px; }
+.driver-notification-item.is-new_ride_request .driver-notification-item-heading strong { color: #ffca69; }
+.driver-notification-item.is-ride_cancelled .driver-notification-item-heading strong { color: #ff8c84; }
+.driver-notification-item-heading small { color: #ffbd4a; font-size: 9px; text-transform: uppercase; }
+.driver-notification-item.is-read .driver-notification-item-heading small { color: rgb(255 255 255 / 44%); }
+.driver-notification-message, .driver-notification-rating span { color: rgb(255 255 255 / 72%); font-size: 10px; line-height: 1.45; }
+.driver-notification-item time { color: rgb(255 255 255 / 42%); font-size: 9px; }
+.driver-notification-rating { display: flex; flex-wrap: wrap; gap: 5px 8px; align-items: center; }
+.driver-notification-rating strong { color: #ffbd4a; font-size: 12px; letter-spacing: 1px; }
+.driver-notification-empty { margin: 0; padding: 20px 14px; color: rgb(255 255 255 / 63%); font-size: 11px; text-align: center; }
+.driver-notification-toast { position: fixed; z-index: 1200; top: 18px; right: 18px; display: flex; align-items: flex-start; gap: 12px; width: min(420px, calc(100vw - 36px)); padding: 15px 12px 14px 15px; border: 1px solid rgb(255 255 255 / 20%); border-left: 5px solid #ffbd4a; border-radius: 12px; background: #151d25; box-shadow: 0 16px 45px rgb(0 0 0 / 48%); }
+.driver-notification-toast.is-ride_cancelled { border-left-color: #ff625b; background: #24191c; }
+.driver-notification-toast-icon { display: grid; flex: 0 0 34px; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: rgb(255 189 74 / 18%); color: #ffd27d; font-size: 18px; font-weight: 800; }
+.driver-notification-toast.is-ride_cancelled .driver-notification-toast-icon { background: rgb(255 98 91 / 18%); color: #ff817b; }
+.driver-notification-toast-content { display: grid; flex: 1; gap: 7px; min-width: 0; }
+.driver-notification-toast strong { color: #ffcf76; font-size: 13px; letter-spacing: .04em; }
+.driver-notification-toast.is-ride_cancelled strong { color: #ff8b84; }
+.driver-notification-toast-content > span { color: #f1f3f4; font-size: 12px; line-height: 1.45; }
+.driver-notification-toast-action { justify-self: start; min-height: 32px; margin-top: 2px; padding: 0 11px; border: 1px solid rgb(255 255 255 / 18%); border-radius: 7px; background: #ffbd4a; color: #171717; font-size: 11px; font-weight: 750; cursor: pointer; }
+.driver-notification-toast.is-ride_cancelled .driver-notification-toast-action { background: #db514b; color: white; }
+.driver-notification-toast-close { flex: 0 0 auto; padding: 0 3px; border: 0; background: transparent; color: rgb(255 255 255 / 68%); font-size: 22px; line-height: 1; cursor: pointer; }
+@media (max-width: 520px) { .driver-notification-toast { top: 10px; right: 10px; width: calc(100vw - 20px); gap: 9px; padding: 12px 9px 12px 12px; } .driver-notification-toast-content > span { font-size: 11px; } }
 .admin-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 14px 0 4px; color: rgb(255 255 255 / 75%); font-size: 11px; }
 .admin-pagination .secondary-button { min-height: 34px; margin: 0; padding: 0 12px; }
 @media (max-width: 850px) {
@@ -439,3 +503,45 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 @media (max-width: 520px) { .driver-presence-card { grid-template-columns: 1fr; } .driver-presence-card > .primary-button, .driver-presence-card > .secondary-button { justify-self: start; } .driver-location-controls { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 850px) { .role-dashboard-heading .client-account { flex-wrap: wrap; } }
 @media (max-width: 520px) { .trip-actions .primary-button { width: 100%; } }
+
+.admin-ratings-section { margin-top: 22px; }
+.admin-page-nav { display: flex; gap: 8px; margin: -8px 0 20px; padding-bottom: 12px; border-bottom: 1px solid rgb(255 255 255 / 15%); }
+.admin-page-nav button { min-height: 36px; padding: 0 15px; border: 1px solid rgb(255 255 255 / 14%); border-radius: 8px; background: rgb(255 255 255 / 5%); color: rgb(255 255 255 / 76%); font-size: 12px; font-weight: 650; cursor: pointer; }
+.admin-page-nav button:hover, .admin-page-nav button.active { border-color: rgb(255 173 135 / 55%); background: rgb(255 173 135 / 14%); color: #fff; }
+.admin-ratings-section { margin-top: 0; }
+.admin-ratings-content { margin-top: 18px; }
+.admin-ratings-heading, .admin-rating-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.admin-ratings-heading p, .admin-rating-card > p { margin: 0; color: rgb(255 255 255 / 65%); font-size: 12px; }
+.admin-ratings-heading .secondary-button { width: auto; min-height: 36px; margin: 0; padding: 0 12px; font-size: 11px; }
+.rating-filter { display: flex; align-items: center; gap: 10px; margin: 15px 0; color: rgb(255 255 255 / 70%); font-size: 11px; }
+.rating-filter select { min-width: 180px; height: 36px; padding: 0 9px; border: 1px solid rgb(255 255 255 / 24%); border-radius: 7px; background: #111a1c; color: #fff; color-scheme: dark; }
+.admin-rating-list { display: grid; gap: 10px; margin-top: 14px; }
+.admin-rating-card { padding: 14px; border: 1px solid rgb(255 255 255 / 14%); border-radius: 10px; background: rgb(255 255 255 / 4%); }
+.admin-rating-top h3 { margin: 0; color: #eef2f4; font-size: 14px; font-weight: 600; }
+.admin-rating-top strong { color: #ffbd4a; font-size: 13px; }
+.admin-rating-card > p { margin-top: 8px; }
+.rating-distribution { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 10px; color: rgb(255 255 255 / 76%); font-size: 11px; }
+.rating-review-details { margin-top: 12px; color: rgb(255 255 255 / 82%); font-size: 11px; }
+.rating-review-details summary { width: fit-content; color: #ffad87; cursor: pointer; font-weight: 600; }
+.rating-review-details ul { display: grid; gap: 8px; margin: 9px 0 0; padding: 0; list-style: none; }
+.rating-review-details li { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; padding: 9px; border-radius: 7px; background: rgb(255 255 255 / 4%); }
+.rating-review-details li strong { color: #ffbd4a; }
+.rating-review-details li span { color: rgb(255 255 255 / 60%); }
+.rating-review-details li p { grid-column: 1 / -1; margin: 3px 0 0; line-height: 1.5; }
+.modal-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(2 7 12 / 76%); backdrop-filter: blur(5px); }
+.action-modal { width: min(100%, 460px); padding: 26px; border: 1px solid rgb(255 255 255 / 18%); border-radius: 16px; background: #151d25; color: #fff; box-shadow: 0 24px 90px rgb(0 0 0 / 50%); }
+.action-modal .card-eyebrow { margin: 0 0 9px; color: #ffad87; font-size: 10px; letter-spacing: .1em; }
+.action-modal h2 { margin: 0; color: #f4f6f8; font-size: 21px; }
+.action-modal > p:not(.card-eyebrow) { color: rgb(255 255 255 / 72%); font-size: 13px; line-height: 1.55; }
+.action-modal > .primary-button { margin-top: 12px; }
+.rating-stars { display: flex; justify-content: center; gap: clamp(5px, 3vw, 14px); margin: 18px 0 4px; }
+.rating-stars button { width: 48px; height: 48px; padding: 0; border: 0; border-radius: 9px; background: rgb(255 255 255 / 7%); color: rgb(255 255 255 / 43%); font-size: 33px; line-height: 1; cursor: pointer; }
+.rating-stars button.is-selected { color: #ffbd4a; }
+.rating-stars button:focus-visible { outline: 2px solid #ffbd4a; outline-offset: 2px; }
+.rating-stars button:disabled { cursor: wait; }
+.rating-modal .rating-description { min-height: 20px; margin: 4px 0 14px; color: #ffcf74; text-align: center; }
+.rating-comment { display: grid; gap: 6px; color: rgb(255 255 255 / 76%); font-size: 11px; }
+.rating-comment textarea { width: 100%; resize: vertical; padding: 9px; border: 1px solid rgb(255 255 255 / 22%); border-radius: 8px; background: rgb(255 255 255 / 6%); color: #fff; font: inherit; }
+.rating-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 17px; }
+.rating-modal-actions button { width: auto; min-height: 40px; margin: 0; padding: 0 16px; }
+@media (max-width: 520px) { .action-modal { padding: 21px; } .rating-stars button { width: 42px; height: 42px; font-size: 29px; } .admin-ratings-heading { align-items: flex-start; flex-direction: column; } }
