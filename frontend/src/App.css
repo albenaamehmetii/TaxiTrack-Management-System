@@ -386,17 +386,56 @@ h1, h2 { font-family: Manrope, sans-serif; color: #202a27; }
 .driver-map-heading { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; color: #414e46; font-size: 11px; }
 .driver-map-heading span { color: #7b867f; }
 .driver-map-card .location-map { height: 300px; }
+.driver-request-list { gap: 0; overflow: hidden; border-top: 1px solid rgb(255 255 255 / 18%); border-radius: 10px; }
+.driver-request-card { display: grid; grid-template-columns: minmax(145px, .85fr) minmax(220px, 1.55fr) minmax(180px, 1fr); align-items: center; gap: 10px; padding: 11px 16px; border: 0; border-bottom: 1px solid rgb(255 255 255 / 13%); border-radius: 0; background: rgb(255 255 255 / 2%); transition: background .15s ease; }
+.driver-request-card:hover { background: rgb(255 255 255 / 5%); }
+.driver-request-card .request-card-top { display: contents; }
+.driver-request-card .request-card-top > div { grid-column: 1; }
+.driver-request-card .status-badge { grid-column: 3; grid-row: 1; justify-self: start; }
+.driver-request-card .request-coordinates { grid-column: 2; grid-row: 1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.driver-request-card .request-coordinates p { grid-template-columns: 1fr; gap: 3px; min-width: 0; }
+.driver-request-card .request-coordinates strong { color: rgb(255 255 255 / 58%); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
+.driver-request-card .request-coordinates span { overflow: hidden; color: #edf1f3; text-overflow: ellipsis; white-space: nowrap; }
+.driver-request-card .request-coordinates small { display: none; }
+.driver-request-card h3 { color: #e4e9ed; font-size: 13px; font-weight: 500; }
+.driver-request-card .request-time { margin-top: 3px; font-size: 10px; }
+.driver-request-card .assigned-driver { grid-column: 3; grid-row: 2; margin: 0; color: #86dfc0; font-size: 11px; }
+.driver-request-card .past-request-details, .driver-request-card .driver-map-card, .driver-request-card .trip-actions { grid-column: 1 / -1; }
+.driver-request-card .past-request-details { color: rgb(255 255 255 / 78%); font-size: 11px; }
+.driver-request-card .past-request-details summary { width: fit-content; color: #ffad87; cursor: pointer; font-weight: 600; }
+.driver-request-card .trip-summary { padding: 10px; }
 .driver-presence-card { display: grid; grid-template-columns: 1fr auto; gap: 15px 20px; margin-bottom: 22px; padding: 20px; border: 1px solid rgb(255 255 255 / 22%); border-radius: 14px; background: rgb(10 17 19 / 62%); color: #fff; box-shadow: 0 18px 44px rgb(0 0 0 / 18%); backdrop-filter: blur(7px); }
+.driver-status-page { grid-template-columns: minmax(0, 1fr) auto; max-width: 780px; margin: 18px auto 0; gap: 13px 18px; padding: 17px; }
+.driver-status-page .notice { grid-column: 1 / -1; margin: 0; }
+.driver-status-switch { display: inline-flex; align-items: center; gap: 10px; align-self: center; min-width: 126px; padding: 9px 12px; border: 1px solid rgb(255 255 255 / 22%); border-radius: 999px; background: rgb(255 255 255 / 7%); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; }
+.driver-status-switch:disabled { cursor: not-allowed; opacity: .58; }
+.driver-status-switch-track { position: relative; width: 38px; height: 22px; border-radius: 999px; background: #69716f; transition: background .18s ease; }
+.driver-status-switch-track span { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .18s ease; }
+.driver-status-switch[aria-checked="true"] .driver-status-switch-track { background: #3fae82; }
+.driver-status-switch[aria-checked="true"] .driver-status-switch-track span { transform: translateX(16px); }
+.driver-status-switch:focus-visible { outline: 3px solid rgb(255 173 135 / 70%); outline-offset: 2px; }
 .driver-presence-copy h2 { margin: 3px 0 5px; color: #fff; font-size: 19px; }
 .driver-presence-copy p:last-child { margin: 0; color: rgb(255 255 255 / 70%); font-size: 12px; }
 .driver-location-controls { display: flex; grid-column: 1 / -1; align-items: center; gap: 12px; }
 .driver-location-controls span, .driver-location-message { color: rgb(255 255 255 / 75%); font-size: 11px; }
 .driver-presence-map { grid-column: 1 / -1; overflow: hidden; border: 1px solid rgb(255 255 255 / 18%); border-radius: 10px; }
-.driver-presence-map .location-map { height: 220px; cursor: crosshair; }
+.driver-presence-map .location-map { height: 185px; cursor: crosshair; }
 .driver-save-location { justify-self: start; }
 .driver-location-message { grid-column: 1 / -1; margin: 0; }
 .driver-approach-map { margin-top: 15px; overflow: hidden; border: 1px solid rgb(255 255 255 / 18%); border-radius: 10px; }
 .driver-approach-map .location-map { height: 230px; }
 .driver-approach-map p { margin: 0; padding: 9px 12px; color: rgb(255 255 255 / 75%); font-size: 11px; }
+.admin-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 14px 0 4px; color: rgb(255 255 255 / 75%); font-size: 11px; }
+.admin-pagination .secondary-button { min-height: 34px; margin: 0; padding: 0 12px; }
+@media (max-width: 850px) {
+  .driver-request-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .driver-request-card .request-card-top { display: flex; grid-column: 1 / -1; }
+  .driver-request-card .request-card-top > div, .driver-request-card .status-badge { grid-column: auto; grid-row: auto; }
+  .driver-request-card .request-coordinates { grid-column: 1 / -1; grid-row: auto; }
+  .driver-request-card .assigned-driver { grid-column: 1 / -1; grid-row: auto; }
+}
+@media (max-width: 520px) { .driver-status-page { grid-template-columns: 1fr; } .driver-status-switch { justify-self: start; } .admin-pagination { gap: 8px; } }
+@media (max-width: 520px) { .driver-request-card { grid-template-columns: 1fr; gap: 12px; } .driver-request-card .request-coordinates { grid-template-columns: 1fr; } }
 @media (max-width: 520px) { .driver-presence-card { grid-template-columns: 1fr; } .driver-presence-card > .primary-button, .driver-presence-card > .secondary-button { justify-self: start; } .driver-location-controls { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 850px) { .role-dashboard-heading .client-account { flex-wrap: wrap; } }
 @media (max-width: 520px) { .trip-actions .primary-button { width: 100%; } }

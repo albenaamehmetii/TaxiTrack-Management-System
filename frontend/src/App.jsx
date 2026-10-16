@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import './App.css'
@@ -6,8 +6,9 @@ import { fetchSuggestedRoute } from './routing.js'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 const DEFAULT_CENTER = [42.6629, 21.1655]
+const ADMIN_PAGE_SIZE = 20
 
-function LocationMap({ activeLocation, pickup, destination, onSelect, driverLocation = null, rideTrace = [], suggestedRoute = [] }) {
+function LocationMap({ activeLocation, pickup, destination, onSelect, driverLocation = null, rideTrace = [], suggestedRoute = [], focusSequence = 0 }) {
   const mapElement = useRef(null)
   const mapRef = useRef(null)
   const markersRef = useRef({ pickup: null, destination: null, driver: null, trace: null, suggestedRoute: null })
@@ -37,6 +38,7 @@ function LocationMap({ activeLocation, pickup, destination, onSelect, driverLoca
       map.stop()
       map.remove()
       mapRef.current = null
+      markersRef.current = { pickup: null, destination: null, driver: null, trace: null, suggestedRoute: null }
     }
   }, [])
 
@@ -94,7 +96,15 @@ function LocationMap({ activeLocation, pickup, destination, onSelect, driverLoca
       markersRef.current.suggestedRoute = null
     }
 
-    if (onSelect) {
+    if (focusSequence > 0 && driverLocation) {
+      const nextViewportKey = `driver-focus:${focusSequence}:${driverLocation.latitude}:${driverLocation.longitude}`
+      if (nextViewportKey !== viewportKeyRef.current) {
+        viewportKeyRef.current = nextViewportKey
+        map.stop()
+        map.flyTo([driverLocation.latitude, driverLocation.longitude], Math.max(map.getZoom(), 15), { duration: 0.4 })
+        mapElement.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    } else if (onSelect) {
       const mostRecent = activeLocation === 'pickup' ? pickup : destination
       const nextViewportKey = mostRecent
         ? `selection:${activeLocation}:${mostRecent.latitude}:${mostRecent.longitude}`
@@ -132,7 +142,7 @@ function LocationMap({ activeLocation, pickup, destination, onSelect, driverLoca
         })
       }
     }
-  }, [pickup, destination, activeLocation, driverLocation, rideTrace, suggestedRoute, onSelect])
+  }, [pickup, destination, activeLocation, driverLocation, rideTrace, suggestedRoute, onSelect, focusSequence])
 
   return <div className="location-map" ref={mapElement} aria-label={onSelect ? 'Map for selecting pickup and destination' : 'Map showing pickup, destination, suggested route, and recorded GPS trace'} />
 }
@@ -186,27 +196,39 @@ function TripSummary({ ride }) {
   )
 }
 
+function AdminPagination({ page, pageCount, onPageChange }) {
+  if (pageCount <= 1) return null
+  return (
+    <nav className="admin-pagination" aria-label="Request pages">
+      <button type="button" className="secondary-button" onClick={() => onPageChange((current) => Math.max(0, current - 1))} disabled={page === 0}>Previous</button>
+      <span>Page {page + 1} of {pageCount}</span>
+      <button type="button" className="secondary-button" onClick={() => onPageChange((current) => Math.min(pageCount - 1, current + 1))} disabled={page >= pageCount - 1}>Next</button>
+    </nav>
+  )
+}
+
 function AdminDashboard({ user, onLogout }) {
   const [rides, setRides] = useState([])
   const [drivers, setDrivers] = useState([])
   const [selectedDrivers, setSelectedDrivers] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const [assigningRide, setAssigningRide] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [clientFilter, setClientFilter] = useState('')
   const [driverFilter, setDriverFilter] = useState('')
-  const busyDriverIds = new Set(rides
+  const [currentPage, setCurrentPage] = useState(0)
+  const [pastPage, setPastPage] = useState(0)
+  const busyDriverIds = useMemo(() => new Set(rides
     .filter((ride) => ['accepted', 'in_progress'].includes(ride.status) && ride.driverId)
-    .map((ride) => ride.driverId))
-  const availableDrivers = drivers.filter((driver) => driver.isOnline && !busyDriverIds.has(driver.id))
-  const clients = [...new Map(rides.map((ride) => [ride.clientId, ride.clientName])).entries()]
-  const currentRides = rides.filter((ride) => !['completed', 'cancelled'].includes(ride.status))
-  const pastRides = rides.filter((ride) => ['completed', 'cancelled'].includes(ride.status))
-  const filteredPastRides = pastRides.filter((ride) => {
+    .map((ride) => ride.driverId)), [rides])
+  const availableDrivers = useMemo(() => drivers.filter((driver) => driver.isOnline && !busyDriverIds.has(driver.id)), [drivers, busyDriverIds])
+  const clients = useMemo(() => [...new Map(rides.map((ride) => [ride.clientId, ride.clientName])).entries()], [rides])
+  const currentRides = useMemo(() => rides.filter((ride) => !['completed', 'cancelled'].includes(ride.status)), [rides])
+  const pastRides = useMemo(() => rides.filter((ride) => ['completed', 'cancelled'].includes(ride.status)), [rides])
+  const filteredPastRides = useMemo(() => pastRides.filter((ride) => {
     const rideDate = rideDateForFilter(ride.createdAt || ride.requestedAt)
     return (!dateFrom || rideDate >= dateFrom)
       && (!dateTo || rideDate <= dateTo)
@@ -214,12 +236,19 @@ function AdminDashboard({ user, onLogout }) {
       && (!driverFilter || (driverFilter === 'unassigned'
         ? !ride.driverId
         : ride.driverId === driverFilter))
-  })
+  }), [pastRides, dateFrom, dateTo, clientFilter, driverFilter])
+  const currentPageCount = Math.max(1, Math.ceil(currentRides.length / ADMIN_PAGE_SIZE))
+  const pastPageCount = Math.max(1, Math.ceil(filteredPastRides.length / ADMIN_PAGE_SIZE))
+  const visibleCurrentRides = currentRides.slice(Math.min(currentPage, currentPageCount - 1) * ADMIN_PAGE_SIZE, (Math.min(currentPage, currentPageCount - 1) + 1) * ADMIN_PAGE_SIZE)
+  const visiblePastRides = filteredPastRides.slice(Math.min(pastPage, pastPageCount - 1) * ADMIN_PAGE_SIZE, (Math.min(pastPage, pastPageCount - 1) + 1) * ADMIN_PAGE_SIZE)
 
   useEffect(() => {
     let active = true
-    async function loadData() {
-      setLoading(true)
+    let inFlight = false
+    async function loadData(showLoading = false) {
+      if (inFlight) return
+      inFlight = true
+      if (showLoading) setLoading(true)
       setError('')
       try {
         const [ridesResponse, usersResponse] = await Promise.all([
@@ -236,10 +265,11 @@ function AdminDashboard({ user, onLogout }) {
       } catch (loadError) {
         if (active) setError(loadError.message || 'Unable to load the admin dashboard.')
       } finally {
-        if (active) setLoading(false)
+        inFlight = false
+        if (active && showLoading) setLoading(false)
       }
     }
-    loadData()
+    loadData(reloadKey === 0)
     const refreshTimer = window.setInterval(loadData, 5000)
     return () => { active = false; window.clearInterval(refreshTimer) }
   }, [reloadKey])
@@ -252,7 +282,6 @@ function AdminDashboard({ user, onLogout }) {
     }
     setAssigningRide(rideId)
     setError('')
-    setNotice('')
     try {
       const response = await fetch(`${API_URL}/api/admin/rides/${rideId}/assign-driver`, {
         method: 'PATCH',
@@ -262,7 +291,6 @@ function AdminDashboard({ user, onLogout }) {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Unable to assign this request.')
-      setNotice(`Ride request #${rideId} assigned to a driver.`)
       setReloadKey((value) => value + 1)
     } catch (assignError) {
       setError(assignError.message || 'Unable to assign this request.')
@@ -331,7 +359,6 @@ function AdminDashboard({ user, onLogout }) {
         </div>
       </div>
       {error && <div className="notice error" role="alert">{error}</div>}
-      {notice && <div className="notice success" role="status">{notice}</div>}
       <div className="request-section">
         <div className="request-section-heading">
           <div><h2>All requests</h2><p>New requests are listed first.</p></div>
@@ -346,18 +373,19 @@ function AdminDashboard({ user, onLogout }) {
             )}
             {currentRides.length > 0 && <section className="admin-request-group">
               <div className="admin-group-heading"><h3>Current requests</h3><span>{currentRides.length}</span></div>
-              <div className="request-list">{currentRides.map(renderRideRequest)}</div>
+              <div className="request-list">{visibleCurrentRides.map(renderRideRequest)}</div>
+              <AdminPagination page={Math.min(currentPage, currentPageCount - 1)} pageCount={currentPageCount} onPageChange={setCurrentPage} />
             </section>}
             <section className="admin-request-group past-requests">
               <div className="admin-group-heading"><h3>Past requests</h3><span>{filteredPastRides.length}</span></div>
               <div className="ride-filters" aria-label="Filter past requests">
-                <label><span>From date</span><input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
-                <label><span>To date</span><input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
-                <label><span>Client</span><select value={clientFilter} onChange={(event) => setClientFilter(event.target.value)}>
+                <label><span>From date</span><input type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPastPage(0) }} /></label>
+                <label><span>To date</span><input type="date" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPastPage(0) }} /></label>
+                <label><span>Client</span><select value={clientFilter} onChange={(event) => { setClientFilter(event.target.value); setPastPage(0) }}>
                   <option value="">All clients</option>
                   {clients.map(([clientId, clientName]) => <option key={clientId} value={clientId}>{clientName}</option>)}
                 </select></label>
-                <label><span>Driver</span><select value={driverFilter} onChange={(event) => setDriverFilter(event.target.value)}>
+                <label><span>Driver</span><select value={driverFilter} onChange={(event) => { setDriverFilter(event.target.value); setPastPage(0) }}>
                   <option value="">All drivers</option>
                   <option value="unassigned">Unassigned</option>
                   {drivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.fullName}</option>)}
@@ -367,12 +395,14 @@ function AdminDashboard({ user, onLogout }) {
                   setDateTo('')
                   setClientFilter('')
                   setDriverFilter('')
+                  setPastPage(0)
                 }}>Clear filters</button>
               </div>
-              <p className="filter-count">Showing {filteredPastRides.length} of {pastRides.length} past requests</p>
+              <p className="filter-count">Showing {filteredPastRides.length === 0 ? 0 : Math.min(filteredPastRides.length, Math.min(pastPage, pastPageCount - 1) * ADMIN_PAGE_SIZE + 1)}–{Math.min(filteredPastRides.length, (Math.min(pastPage, pastPageCount - 1) + 1) * ADMIN_PAGE_SIZE)} of {filteredPastRides.length} matching past requests ({pastRides.length} total)</p>
               {filteredPastRides.length === 0 ? (
                 <p className="empty-state">{pastRides.length === 0 ? 'No past requests yet.' : 'No past requests match these filters.'}</p>
-              ) : <div className="request-list">{filteredPastRides.map(renderRideRequest)}</div>}
+              ) : <div className="request-list">{visiblePastRides.map(renderRideRequest)}</div>}
+              <AdminPagination page={Math.min(pastPage, pastPageCount - 1)} pageCount={pastPageCount} onPageChange={setPastPage} />
             </section>
           </div>
         )}
@@ -381,16 +411,78 @@ function AdminDashboard({ user, onLogout }) {
   )
 }
 
+function DriverStatusPage() {
+  const [presence, setPresence] = useState({ isOnline: false, location: null })
+  const [error, setError] = useState('')
+  const [presenceBusy, setPresenceBusy] = useState(false)
+  const [locating, setLocating] = useState(false)
+  const [locationFocusSequence, setLocationFocusSequence] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    fetch(`${API_URL}/api/rides/presence`, { credentials: 'include' })
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.message || 'Unable to load availability.')
+        if (active) setPresence(data.presence)
+      })
+      .catch((loadError) => { if (active) setError(loadError.message) })
+    return () => { active = false }
+  }, [])
+
+  async function savePresence(nextOnline, location = presence.location) {
+    setPresenceBusy(true)
+    setError('')
+    try {
+      if (nextOnline && !location) throw new Error('Choose your current location or set it on the map before going online.')
+      const response = await fetch(`${API_URL}/api/rides/presence`, {
+        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isOnline: nextOnline, ...(location || {}) }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message || 'Unable to update availability.')
+      setPresence(data.presence)
+    } catch (saveError) { setError(saveError.message || 'Unable to update availability.') }
+    finally { setPresenceBusy(false) }
+  }
+
+  function useCurrentLocation() {
+    setError('')
+    if (!navigator.geolocation) { setError('Location access is not supported by this browser.'); return }
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition((position) => {
+      const location = { latitude: position.coords.latitude, longitude: position.coords.longitude }
+      setPresence((current) => ({ ...current, location }))
+      setLocationFocusSequence((current) => current + 1)
+      setLocating(false)
+    }, () => {
+      setError('Could not access your location. Allow location permission or choose a point on the map.')
+      setLocating(false)
+    }, { enableHighAccuracy: true, timeout: 12000 })
+  }
+
+  return (
+    <section className="driver-presence-card driver-status-page">
+      <div className="driver-presence-copy"><p className="card-eyebrow">DRIVER STATUS</p><h2>{presence.isOnline ? 'You’re online' : 'You’re offline'}</h2><p>{presence.isOnline ? 'Your account can receive new ride assignments while you are free.' : 'Go online when you are ready to receive ride assignments.'}</p></div>
+      <button className="driver-status-switch" type="button" role="switch" aria-checked={presence.isOnline} aria-label="Driver availability" onClick={() => savePresence(!presence.isOnline)} disabled={presenceBusy || (!presence.isOnline && !presence.location)}>
+        <span className="driver-status-switch-track" aria-hidden="true"><span /></span>
+        <span>{presenceBusy ? 'Saving…' : presence.isOnline ? 'Online' : 'Offline'}</span>
+      </button>
+      <div className="driver-location-controls"><button className="secondary-button" type="button" onClick={useCurrentLocation} disabled={presenceBusy || locating}>{locating ? 'Locating…' : 'Use current location'}</button><span>{presence.location ? `Selected: ${formatCoordinates(presence.location)}` : 'Choose your location with GPS or on the map.'}</span></div>
+      <div className="driver-presence-map"><LocationMap activeLocation="driver" pickup={null} destination={null} driverLocation={presence.location} focusSequence={locationFocusSequence} onSelect={(_active, point) => { setPresence((current) => ({ ...current, location: point })) }} /></div>
+      {presence.location && <button className="secondary-button driver-save-location" type="button" onClick={() => savePresence(presence.isOnline, presence.location)} disabled={presenceBusy}>Confirm location</button>}
+      {error && <div className="notice error" role="alert">{error}</div>}
+    </section>
+  )
+}
+
 function DriverDashboard({ user, onLogout }) {
+  const [dashboardPage, setDashboardPage] = useState('rides')
   const [rides, setRides] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const [workingRide, setWorkingRide] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
-  const [presence, setPresence] = useState({ isOnline: false, location: null })
-  const [presenceBusy, setPresenceBusy] = useState(false)
-  const [locationMessage, setLocationMessage] = useState('')
   const [suggestedRouteState, setSuggestedRouteState] = useState({
     rideId: null, status: null, points: [], loading: false, error: '',
   })
@@ -421,48 +513,6 @@ function DriverDashboard({ user, onLogout }) {
     loadRides()
     return () => { active = false }
   }, [reloadKey])
-
-  useEffect(() => {
-    let active = true
-    async function loadPresence() {
-      try {
-        const response = await fetch(`${API_URL}/api/rides/presence`, { credentials: 'include' })
-        const data = await response.json()
-        if (!response.ok) throw new Error(data.message || 'Unable to load availability.')
-        if (active) setPresence(data.presence)
-      } catch (loadError) { if (active) setError(loadError.message) }
-    }
-    loadPresence()
-    return () => { active = false }
-  }, [])
-
-  async function savePresence(nextOnline, location = presence.location) {
-    setPresenceBusy(true)
-    setError('')
-    setLocationMessage('')
-    try {
-      if (nextOnline && !location) throw new Error('Choose your current location or set it on the map before going online.')
-      const response = await fetch(`${API_URL}/api/rides/presence`, {
-        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isOnline: nextOnline, ...(location || {}) }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.message || 'Unable to update availability.')
-      setPresence(data.presence)
-      setLocationMessage(nextOnline ? 'You are visible to the administrator for ride assignment.' : 'You are offline and will not receive new ride assignments.')
-    } catch (saveError) { setError(saveError.message || 'Unable to update availability.') }
-    finally { setPresenceBusy(false) }
-  }
-
-  function useCurrentLocation() {
-    setLocationMessage('')
-    if (!navigator.geolocation) { setError('Location access is not supported by this browser.'); return }
-    navigator.geolocation.getCurrentPosition((position) => {
-      const location = { latitude: position.coords.latitude, longitude: position.coords.longitude }
-      setPresence((current) => ({ ...current, location }))
-      setLocationMessage('Location captured. Confirm it on the map, then save it or go online.')
-    }, () => setError('Could not access your location. Allow location permission or choose a point on the map.'), { enableHighAccuracy: true, timeout: 12000 })
-  }
 
   useEffect(() => {
     let active = true
@@ -501,7 +551,6 @@ function DriverDashboard({ user, onLogout }) {
   async function updateRide(ride, action) {
     setWorkingRide(`${ride.id}:${action}`)
     setError('')
-    setNotice('')
     try {
       const options = { method: 'PATCH', credentials: 'include' }
       if (action === 'start' || action === 'end') {
@@ -512,17 +561,10 @@ function DriverDashboard({ user, onLogout }) {
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Unable to update this request.')
 
-      const messages = {
-        accept: 'Request accepted.',
-        start: 'Trip started. The start time was saved.',
-      }
       if (action === 'end') {
         setRides((current) => current.map((item) => (
           item.id === ride.id ? { ...item, ...data.ride } : item
         )))
-        setNotice(data.message || 'Trip completed.')
-      } else {
-        setNotice(messages[action])
       }
       setReloadKey((value) => value + 1)
     } catch (actionError) {
@@ -537,47 +579,43 @@ function DriverDashboard({ user, onLogout }) {
       <div className="role-dashboard-heading">
         <div className="welcome-copy">
           <p className="eyebrow">DRIVER DASHBOARD</p>
-          <h1>Your rides.</h1>
-          <p className="intro">Your assignments and completed trips. Route estimates are saved with each request; Start Trip and End Trip record the actual elapsed time.</p>
+          <h1>{dashboardPage === 'status' ? 'Driver status.' : 'Your rides.'}</h1>
+          <p className="intro">{dashboardPage === 'status' ? 'Manage your availability and confirm your current location.' : 'Your assignments and completed trips. Route estimates are saved with each request; Start Trip and End Trip record the actual elapsed time.'}</p>
         </div>
         <div className="client-account">
           <span className="avatar" aria-hidden="true">{user.fullName.charAt(0).toUpperCase()}</span>
           <span className="client-account-info"><strong>{user.fullName}</strong><span>Driver</span></span>
+          <button className="secondary-button" type="button" aria-current={dashboardPage === 'rides' ? 'page' : undefined} onClick={() => setDashboardPage('rides')}>Your rides</button>
+          <button className="secondary-button" type="button" aria-current={dashboardPage === 'status' ? 'page' : undefined} onClick={() => setDashboardPage('status')}>Driver Status</button>
           <button className="secondary-button" type="button" onClick={onLogout}>Sign out</button>
         </div>
       </div>
       {error && <div className="notice error" role="alert">{error}</div>}
-      {notice && <div className="notice success" role="status">{notice}</div>}
-      <section className="driver-presence-card">
-        <div className="driver-presence-copy"><p className="card-eyebrow">AVAILABILITY</p><h2>{presence.isOnline ? 'You’re online' : 'You’re offline'}</h2><p>{presence.isOnline ? 'Your account can receive new ride assignments while you are free.' : 'Go online when you are ready to receive ride assignments.'}</p></div>
-        <button className={presence.isOnline ? 'secondary-button' : 'primary-button'} type="button" onClick={() => savePresence(!presence.isOnline)} disabled={presenceBusy || (!presence.isOnline && !presence.location)}>{presenceBusy ? 'Saving…' : presence.isOnline ? 'Go offline' : 'Go online'}</button>
-        <div className="driver-location-controls"><button className="secondary-button" type="button" onClick={useCurrentLocation} disabled={presenceBusy}>Use current location</button><span>{presence.location ? `Selected: ${formatCoordinates(presence.location)}` : 'Choose your location with GPS or on the map.'}</span></div>
-        <div className="driver-presence-map"><LocationMap activeLocation="driver" pickup={null} destination={null} driverLocation={presence.location} onSelect={(_active, point) => { setPresence((current) => ({ ...current, location: point })); setLocationMessage('Map point selected. Confirm it by going online or saving your location.') }} /></div>
-        {presence.location && <button className="secondary-button driver-save-location" type="button" onClick={() => savePresence(presence.isOnline, presence.location)} disabled={presenceBusy}>Save location</button>}
-        {locationMessage && <p className="driver-location-message" role="status">{locationMessage}</p>}
-      </section>
-      <div className="request-section">
+      {dashboardPage === 'status' ? <DriverStatusPage /> : <div className="request-section">
         <div className="request-section-heading">
-          <div><h2>Your requests</h2><p>Current assignments and completed trips for your account.</p></div>
+          <div><h2>All requests</h2><p>Current assignments and completed trips for your account.</p></div>
           <button className="secondary-button refresh-button" type="button" onClick={() => setReloadKey((value) => value + 1)} disabled={loading}>Refresh</button>
         </div>
         {loading ? <p className="empty-state">Loading requests…</p> : rides.length === 0 ? <p className="empty-state">You have no assigned requests.</p> : (
-          <div className="request-list">
+          <div className="request-list driver-request-list">
             {rides.map((ride) => (
-              <article className="request-card" key={ride.id}>
+              <article className="request-card past-request-card driver-request-card" key={ride.id}>
                 <div className="request-card-top">
                   <div><p className="card-eyebrow">REQUEST #{ride.id}</p><h3>{ride.clientName}</h3><p className="request-time">{formatRideTime(ride.requestedAt)}</p></div>
                   <span className={`status-badge status-${ride.status}`}>{ride.status.replace('_', ' ')}</span>
                 </div>
                 <div className="request-coordinates">
-                  <p><strong>Pickup</strong><span>{ride.pickup.address || 'Address not recorded'}</span><small>{formatCoordinates(ride.pickup)}</small></p>
-                  <p><strong>Destination</strong><span>{ride.destination.address || 'Address not recorded'}</span><small>{formatCoordinates(ride.destination)}</small></p>
+                  <p><strong>Pickup</strong><span>Map point ({formatCoordinates(ride.pickup)})</span></p>
+                  <p><strong>Destination</strong><span>Map point ({formatCoordinates(ride.destination)})</span></p>
                 </div>
-                {(ride.start || ride.end) && <div className="trip-saved-details">
-                  {ride.start && <p><strong>Started:</strong> {formatRideTime(ride.startedAt)} · {ride.start.latitude.toFixed(5)}, {ride.start.longitude.toFixed(5)}</p>}
-                  {ride.end && <p><strong>Ended:</strong> {formatRideTime(ride.endedAt)} · {ride.end.latitude.toFixed(5)}, {ride.end.longitude.toFixed(5)}</p>}
-                </div>}
-                {ride.status === 'completed' && <TripSummary ride={ride} />}
+                <p className="assigned-driver">Assigned to you</p>
+                {ride.status === 'completed' && <details className="past-request-details"><summary>More trip details</summary>
+                  {(ride.start || ride.end) && <div className="trip-saved-details">
+                    {ride.start && <p><strong>Started:</strong> {formatRideTime(ride.startedAt)} · {ride.start.latitude.toFixed(5)}, {ride.start.longitude.toFixed(5)}</p>}
+                    {ride.end && <p><strong>Ended:</strong> {formatRideTime(ride.endedAt)} · {ride.end.latitude.toFixed(5)}, {ride.end.longitude.toFixed(5)}</p>}
+                  </div>}
+                  <TripSummary ride={ride} />
+                </details>}
                 {ride.status !== 'completed' && <div className="driver-map-card">
                   <div className="driver-map-heading"><strong>{ride.status === 'in_progress' ? 'Trip in progress' : 'Pickup and destination'}</strong><span>{routeRide?.id === ride.id && routeLoading ? 'Loading suggested route…' : 'No GPS tracking required'}</span></div>
                   <LocationMap activeLocation="driver" pickup={ride.pickup} destination={ride.destination} suggestedRoute={routeRide?.id === ride.id ? suggestedRoute : []} />
@@ -593,7 +631,7 @@ function DriverDashboard({ user, onLogout }) {
             ))}
           </div>
         )}
-      </div>
+      </div>}
     </section>
   )
 }
@@ -664,17 +702,18 @@ function ClientRideProgress({ ride, cancelling, cancelError, freeDriverCount, on
   useEffect(() => {
     if (ride.status !== 'accepted' || driverLatitude == null || driverLongitude == null) return undefined
     let active = true
+    const controller = new AbortController()
     const loadEstimate = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/rides/${ride.id}/approach-estimate`, { credentials: 'include' })
+        const response = await fetch(`${API_URL}/api/rides/${ride.id}/approach-estimate`, { credentials: 'include', signal: controller.signal })
         const data = await response.json()
         if (!response.ok) throw new Error(data.message || 'ETA unavailable')
         if (active) setApproachEstimate({ rideId: ride.id, minutes: data.estimatedDurationMinutes })
-      } catch { if (active) setApproachEstimate({ rideId: ride.id, unavailable: true }) }
+      } catch { if (active && !controller.signal.aborted) setApproachEstimate({ rideId: ride.id, unavailable: true }) }
     }
     loadEstimate()
     const timer = window.setInterval(loadEstimate, 15000)
-    return () => { active = false; window.clearInterval(timer) }
+    return () => { active = false; controller.abort(); window.clearInterval(timer) }
   }, [ride.id, ride.status, driverLatitude, driverLongitude])
 
   if (isCancelled || ride.status === 'in_progress' || isCompleted) {
@@ -853,8 +892,6 @@ function App() {
       if (!response.ok) throw new Error(data.message || 'Request failed.')
       setUser(data.user)
       setPassword('')
-      setNotice(mode === 'register' ? 'Account created.' : 'You are signed in.')
-      setNoticeType('success')
     } catch (error) {
       setNotice(error.message || 'Unable to connect to the server.')
       setNoticeType('error')
@@ -869,8 +906,8 @@ function App() {
     } finally {
       setUser(null)
       setMode('login')
-      setNotice('You are signed out.')
-      setNoticeType('success')
+      setNotice('')
+      setNoticeType('error')
     }
   }
 
@@ -899,8 +936,6 @@ function App() {
       setClientRides((current) => current.map((item) => (
         item.id === ride.id ? { ...item, ...data.ride } : item
       )))
-      setRideFeedback('Route estimate updated.')
-      setRideFeedbackType('success')
     } catch (error) {
       setRideFeedback(error.message || 'Unable to calculate the route estimate. Try again later.')
       setRideFeedbackType('error')
@@ -934,10 +969,6 @@ function App() {
       setFocusedClientRideId(data.ride.id)
       setHideClientRideProgress(false)
       setClientCancelError('')
-      setRideFeedback(data.ride.estimateUnavailable
-        ? `Request #${data.ride.id} sent. The route estimate is unavailable, so no distance, duration, or fare has been added. You can retry the estimate from My rides.`
-        : `Request #${data.ride.id} sent. Estimated road distance: ${Number(data.ride.estimatedDistanceKm).toFixed(3)} km; estimated travel time: ${data.ride.estimatedDurationMinutes} min; estimated fare: €${Number(data.ride.estimatedFare).toFixed(2)}.`)
-      setRideFeedbackType('success')
       setClientRidesReloadKey((value) => value + 1)
     } catch (requestError) {
       setRideFeedback(requestError.message || 'Unable to connect to the server.')
@@ -1031,7 +1062,7 @@ function App() {
                     <small>{formatCoordinates(destination)}</small>
                   </label>
                 </div>
-                {rideFeedback && <div className={`notice ${rideFeedbackType}`} role={rideFeedbackType === 'error' ? 'alert' : 'status'}>{rideFeedback}</div>}
+                {rideFeedback && rideFeedbackType === 'error' && <div className="notice error" role="alert">{rideFeedback}</div>}
                 <button className="primary-button create-ride-button" type="button" onClick={submitRideRequest} disabled={!pickup || !destination || !pickupAddress.trim() || !destinationAddress.trim() || rideBusy}>
                   {rideBusy ? 'Sending request…' : 'Request ride'}
                 </button>
@@ -1057,7 +1088,7 @@ function App() {
             <div className="form-heading">
               <h2>{mode === 'register' ? 'Create an account' : 'Log in'}</h2>
             </div>
-            {notice && <div className={`notice ${noticeType}`} role="status">{notice}</div>}
+            {notice && noticeType === 'error' && <div className="notice error" role="alert">{notice}</div>}
             <form onSubmit={handleSubmit}>
               {mode === 'register' && (
                 <fieldset className="field role-picker">

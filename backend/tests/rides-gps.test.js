@@ -451,6 +451,13 @@ test('available drivers exclude accepted or in-progress rides and become assigna
       const user = users.get(String(values[0]));
       return { rows: user ? [{ is_online: user.is_online, latitude: user.latitude ?? null, longitude: user.longitude ?? null, updated_at: new Date() }] : [] };
     }
+    if (sql.includes('FROM rides r LEFT JOIN driver_presence') && sql.includes("r.status = 'accepted'")) {
+      const ride = findRide(values[0]);
+      const driver = ride?.driver_id ? users.get(ride.driver_id) : null;
+      return { rows: ride && ride.client_id === String(values[1]) && ride.status === 'accepted' && driver?.is_online
+        ? [{ status: ride.status, pickup_latitude: ride.pickup_latitude, pickup_longitude: ride.pickup_longitude, latitude: driver.latitude, longitude: driver.longitude }]
+        : [] };
+    }
     if (sql.includes('COUNT(*)::int AS count')) {
       assert.match(sql, /status IN \('accepted', 'in_progress'\)/);
       assert.match(sql, /driver_presence/);
@@ -537,6 +544,8 @@ test('available drivers exclude accepted or in-progress rides and become assigna
   const clientRideBody = await clientRides.json();
   assert.equal(clientRideBody.freeDriverCount, 0);
   assert.equal(clientRideBody.rides.find((ride) => ride.id === '1').status, 'pending');
+  const pendingApproachEstimate = await realFetch(`${origin}/api/rides/1/approach-estimate`, { headers: makeHeaders('200') });
+  assert.equal(pendingApproachEstimate.status, 404);
 
   const blockedAssignment = await realFetch(`${origin}/api/admin/rides/1/assign-driver`, {
     method: 'PATCH', headers: makeHeaders('100'), body: JSON.stringify({ driverId: '300' }),
